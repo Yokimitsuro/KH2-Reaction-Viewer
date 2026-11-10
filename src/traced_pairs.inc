@@ -3,11 +3,6 @@
         {640, 252, 245, "Roll Up", "Target motion 44A starts in the reaction script."},
         {641, 253, 246, "Spin Burst", "Target motion 45A starts in the reaction script."},
     }},
-    {"B_CA010", {
-        {392, 252, 193, "Land", "Target motion 42A starts in the reaction script."},
-        {393, 254, 194, "Reverse Blade", "Barbossa's countered blade"},
-        {580, 256, 242, "Sonic Dive", "Target motion 44A starts in the reaction script."},
-    }},
     {"B_CA020", {
         {361, 252, 202, "Backshuffle", "Target motion 51A starts in the reaction script."},
     }},
@@ -18,6 +13,7 @@
     {"B_EX100", {
         {297, 259, 204, "Key Counter", "Twilight Thorn follows Roxas's Key Counter"},
         {298, 260, 226, "Lunarsault", "Twilight Thorn follows Roxas's Lunarsault"},
+        {299, 258, 209, "Break Raid", "Roxas and Twilight Thorn play the finisher", false, 210},
     }},
     {"B_EX120_HB", {
         {502, 253, 242, "Show Stealer", "Demyx is caught by Show Stealer"},
@@ -72,8 +68,8 @@
         {682, 252, 151, "Merge", "Target motion 90A starts in the reaction script."},
     }},
     {"B_HE100", {
-        {346, 258, 213, "Phil One-Two", "Target motion 62A starts in the reaction script."},
-        {420, 259, 214, "Urninator", "Hydra is struck by the urn"},
+        {346, 258, 213, "Phil One-Two", "Hydra and the urn play their linked tracks", false, -1, "obj/F_HE030_L.mdlx", 152},
+        {420, 259, 214, "Urninator", "Hydra is struck by the urn", false, -1, "obj/F_HE030_L.mdlx", 153},
     }},
     {"B_LK120", {
         {660, 256, 241, "Fend", "Groundshaker is held off"},
@@ -104,7 +100,7 @@
         {676, 252, 241, "Bat Cry", "The bat is swung in Bat Cry"},
     }},
     {"M_EX670", {
-        {368, 252, 241, "Rodeo", "Living Bone is ridden"},
+        {368, 252, 241, "Rodeo", "Living Bone carries Lion Sora", true},
         {368, 253, 242, "Rodeo", "Rodeo dismount"},
         {369, 254, 243, "Grand Cross", "Living Bone is thrown down"},
     }},
@@ -146,10 +142,6 @@
         {481, 252, 241, "Berserk", "Target motion 90A starts in the reaction script."},
         {528, 254, 243, "Eclipse", "Target motion 92A starts in the reaction script."},
         {586, 254, 243, "Magna Storm", "Target motion 92A starts in the reaction script."},
-    }},
-    {"M_EX880_DANCER_EH", {
-        {397, 252, 241, "Wild Dance", "Demyx's clone is caught by Wild Dance"},
-        {504, 253, 242, "Wild Dance", "Demyx's clone reacts to the follow-up"},
     }},
     {"M_EX900", {
         {303, 254, 242, "Fail-Safe", "Assassin is caught in its explosion"},

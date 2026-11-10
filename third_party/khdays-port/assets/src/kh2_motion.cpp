@@ -469,11 +469,34 @@ void validate_tables(const Reader& m, const std::size_t joints) {
 
 Motion::Motion(const std::uint8_t* data, const std::size_t size, const std::size_t at) {
     const Reader b(data, size);
+    if (b.u32(at) == 1) {
+        (void)b.at(at, 0x60);
+        const auto joints = b.u32(at + 0x10);
+        const auto frames = b.u32(at + 0x24);
+        raw_matrices_ = b.u32(at + 0x28);
+        raw_root_ = b.u32(at + 0x2c);
+        start_ = b.f32(at + 0x50);
+        end_ = b.f32(at + 0x54);
+        fps_ = b.f32(at + 0x58);
+        ret_ = b.f32(at + 0x5c);
+        const auto available = size - at;
+        if (joints == 0 || joints > 0xffff || frames == 0 || frames > 0x7fffffff ||
+            !std::isfinite(start_) || !std::isfinite(end_) || end_ < start_ ||
+            !std::isfinite(fps_) || fps_ <= 0 || raw_matrices_ < 0x60 || raw_matrices_ > available ||
+            frames > (available - raw_matrices_) / (joints * 64U) ||
+            (raw_root_ && (raw_root_ < 0x60 || raw_root_ > available || frames > (available - raw_root_) / 64U))) {
+            throw std::runtime_error("Invalid KH2 sampled motion.");
+        }
+        model_num_ = calc_num_ = static_cast<int>(joints);
+        raw_frames_ = static_cast<int>(frames);
+        bytes_.assign(data + at, data + size);
+        return;
+    }
     (void)b.at(at, kHeaderSize);
     // its type, the header's first word (kn::motionSetup 0xf8e8c): 0 MotionPrototype0, 1 MotionRAW
     if (b.u32(at) != 0) {
         throw std::runtime_error("KH2 motion: type " + std::to_string(b.u32(at)) +
-                                 " (only interpolated motions, MotionPrototype0, are played)");
+                                 " is unsupported");
     }
     bytes_.assign(data + at, data + size);
     const Reader m(bytes_.data(), bytes_.size());
@@ -694,7 +717,22 @@ void limit(const Reader& m, std::size_t l, const Vec4& base, Vec4& value) {
 
 }  // namespace
 
+Mat4 Motion::sample_raw(float ticks, std::size_t offset, std::size_t matrices_per_frame, std::size_t joint) const {
+    // The frame table starts at the clip's own first frame, even for nonzero start_.
+    const float frame = std::clamp(ticks * fps_ / 60.0F, 0.0F, static_cast<float>(raw_frames_ - 1));
+    const auto from = static_cast<std::size_t>(frame);
+    const auto to = std::min(from + 1, static_cast<std::size_t>(raw_frames_ - 1));
+    const Reader m(bytes_.data(), bytes_.size());
+    Mat4 result;
+    for (std::size_t i = 0; i < result.size(); ++i) {
+        const auto component = [&](std::size_t f) { return m.f32(offset + (f * matrices_per_frame + joint) * 64 + i * 4); };
+        result[i] = std::lerp(component(from), component(to), frame - static_cast<float>(from));
+    }
+    return result;
+}
+
 Mat4 Motion::root_motion(const float ticks) const {
+    if (raw_frames_) return raw_root_ ? sample_raw(ticks, raw_root_, 1, 0) : kUnit;
     // MotionPrototype0::getPosition (0x1028c0): scale, rotation, translation and
     // nine F-curves (-1 none) over them; T * Rz * Ry * Rx * S.
     const Reader m(bytes_.data(), bytes_.size());
@@ -780,6 +818,7 @@ MotionSet::MotionSet(const std::uint8_t* data, const std::size_t size) {
                 }
             }
         }
+        if (motion) motion->attributes_ = attributes;
         motions_.push_back(std::move(motion));
         attributes_.push_back(std::move(attributes));
     }
@@ -804,6 +843,10 @@ const MotionAttributes* MotionSet::attributes(const std::size_t slot) const {
 
 const Motion* MotionSet::motion(const std::size_t slot) const {
     return slot < motions_.size() ? motions_[slot].get() : nullptr;
+}
+
+std::shared_ptr<const Motion> MotionSet::share_motion(const std::size_t slot) const {
+    return slot < motions_.size() ? motions_[slot] : nullptr;
 }
 
 std::string MotionSet::name(const std::size_t slot) const {
@@ -1093,6 +1136,13 @@ float MotionPlayer::expression(const Motion& motion, const int node, const int d
 }
 
 void MotionPlayer::evaluate(const Motion& motion, const float ticks, const Mat4& world, const GroundRay* ground) {
+    if (motion.raw_frames_) {
+        const auto count = static_cast<std::size_t>(motion.model_joints());
+        gmatrix_.resize(std::min(count, skeleton_.joints.size()));
+        for (std::size_t i = 0; i < gmatrix_.size(); ++i)
+            gmatrix_[i] = motion.sample_raw(ticks, motion.raw_matrices_, count, i);
+        return;
+    }
     // MotionPrototype0::calc (0x101e28)
     if (current_ != &motion) {
         constants(motion);

@@ -218,7 +218,8 @@ ImportedModel import_mdlx(const std::filesystem::path& path) {
 }
 
 ImportedModel import_mdlx(const std::uint8_t* data, const std::size_t size, const std::string& name,
-                          const std::filesystem::path& hd_folder) {
+                          const std::filesystem::path& hd_folder, const MdlxPicture& remastered,
+                          std::vector<MdlxMeshInfo>* mesh_info) {
     const auto entries = bar_entries(data, size);
     const BarEntry* model_entry = nullptr;
     const BarEntry* texture_entry = nullptr;
@@ -278,12 +279,23 @@ ImportedModel import_mdlx(const std::uint8_t* data, const std::size_t size, cons
         TexturePictures pictures(data, size, texture_entry->offset);
         std::error_code no_folder;
         const bool has_hd = !hd_folder.empty() && std::filesystem::is_directory(hd_folder, no_folder);
+        const auto hd_picture = [&](int number) -> std::optional<DecodedTexture> {
+            if (number < 0) return std::nullopt;
+            if (remastered) {
+                try {
+                    if (auto picture = remastered(number)) return picture;
+                } catch (const std::runtime_error& e) {
+                    result.notes.push_back(e.what());
+                }
+            }
+            return has_hd ? read_hd_picture(hd_folder, number, result.notes) : std::nullopt;
+        };
         int hd_pictures = 0, hd_sheets = 0;
         hd.resize(container.textures.size());
         for (std::size_t t = 0; t < container.textures.size(); ++t) {
             const std::string key = "tex" + std::to_string(t);
             try {
-                auto big = has_hd ? read_hd_picture(hd_folder, container.hd_pictures[t], result.notes) : std::nullopt;
+                auto big = hd_picture(container.hd_pictures[t]);
                 if (big) {
                     const GsTexture& gs = container.textures[t];
                     hd[t] = {true, static_cast<float>(big->width), static_cast<float>(big->height),
@@ -337,8 +349,7 @@ ImportedModel import_mdlx(const std::uint8_t* data, const std::size_t size, cons
                 }
                 out.scripts.push_back(std::move(script));
             }
-            auto sheet =
-                has_hd && a.hd_sheet >= 0 ? read_hd_picture(hd_folder, a.hd_sheet, result.notes) : std::nullopt;
+            auto sheet = hd_picture(a.hd_sheet);
             if (sheet && (a.sprite_count <= 0 || sheet->height % a.sprite_count != 0)) {
                 result.notes.push_back("-" + std::to_string(a.hd_sheet) + ": " + std::to_string(sheet->height) +
                                        " rows do not divide into its " + std::to_string(a.sprite_count) +
@@ -367,7 +378,7 @@ ImportedModel import_mdlx(const std::uint8_t* data, const std::size_t size, cons
             result.notes.push_back(std::to_string(hd_pictures) + " of " + std::to_string(container.textures.size()) +
                                    " pictures and " + std::to_string(hd_sheets) + " of " +
                                    std::to_string(container.animations.size()) + " sprite sheets from " +
-                                   hd_folder.string());
+                                   (remastered ? "the PC packages" : hd_folder.string()));
         }
     }
 
@@ -386,6 +397,7 @@ ImportedModel import_mdlx(const std::uint8_t* data, const std::size_t size, cons
         }
         for (const bool two_sided : {false, true}) {
             NeutralMesh mesh;
+            MdlxMeshInfo info{group.attribute};
             mesh.name = name + "_" + std::to_string(g) + (two_sided ? "_both" : "");
             mesh.texture_name = textured ? "tex" + std::to_string(group.texture) : std::string{};
             mesh.material_name = mesh.name;
@@ -400,6 +412,14 @@ ImportedModel import_mdlx(const std::uint8_t* data, const std::size_t size, cons
                 for (const Vertex& v : t.corners) {
                     mesh.indices.push_back(static_cast<std::uint32_t>(mesh.vertices.size()));
                     mesh.vertices.push_back(corner(v, world, texels, hd_region));
+                    if (mesh_info) {
+                        const auto add = [&](int joint, const std::array<float, 4>& p) {
+                            info.weights.push_back({joint, {p[0] * kMetres, p[1] * kMetres, p[2] * kMetres, p[3]}});
+                        };
+                        if (v.influences.empty()) add(v.bone, {v.position[0], v.position[1], v.position[2], 1});
+                        else for (const auto& influence : v.influences) add(influence.bone, influence.position);
+                        info.weight_ends.push_back(static_cast<std::uint32_t>(info.weights.size()));
+                    }
                 }
             }
             if (mesh.vertices.empty()) {
@@ -407,6 +427,7 @@ ImportedModel import_mdlx(const std::uint8_t* data, const std::size_t size, cons
             }
             result.model.header_vertex_count += static_cast<std::uint16_t>(mesh.vertices.size());
             result.model.meshes.push_back(std::move(mesh));
+            if (mesh_info) mesh_info->push_back(std::move(info));
         }
     }
     if (result.model.meshes.empty()) {

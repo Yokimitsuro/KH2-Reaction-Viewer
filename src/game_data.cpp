@@ -184,7 +184,6 @@ bool GameData::exists(const fs::path& file) const {
 Bytes GameData::read(const fs::path& file) const {
     if (!packed()) return read_file(folder_ / file);
     const auto found = entries_.find(digest(file));
-    const auto invalid = [&] { return std::runtime_error("Invalid KH2 package entry for " + generic_utf8(file)); };
     if (found == entries_.end()) throw std::runtime_error("Not found in KH2 packages: " + generic_utf8(file));
     const auto& entry = found->second;
     const auto& source = packages_[entry.package];
@@ -196,19 +195,63 @@ Bytes GameData::read(const fs::path& file) const {
     const std::uint32_t texture_count = u32(header.data() + 4);
     const auto encoding = std::bit_cast<std::int32_t>(u32(header.data() + 8));
     const std::uint64_t header_size = header.size() + std::uint64_t(texture_count) * 48;
+    const auto identity = source.fingerprint.empty() ? std::string{} :
+        source.fingerprint + "|" + std::to_string(entry.offset) + "|" + std::to_string(entry.length);
+    return read_payload(package, header, entry.offset + header_size, entry.offset + entry.length,
+                        unpacked_size, encoding, identity);
+}
+
+Bytes GameData::read_remastered(const fs::path& file, std::string_view name) const {
+    if (!packed()) return {};
+    const auto found = entries_.find(digest(file));
+    if (found == entries_.end()) return {};
+    const auto& entry = found->second;
+    const auto& source = packages_[entry.package];
+    std::ifstream package(source.path, std::ios::binary);
+    package.seekg(static_cast<std::streamoff>(entry.offset));
+    std::array<std::uint8_t, 16> header{};
+    read_exact(package, header);
+    const auto size = u32(header.data());
+    const auto count = u32(header.data() + 4);
+    const auto encoding = std::bit_cast<std::int32_t>(u32(header.data() + 8));
+    const auto padded_size = [](std::uint32_t bytes, std::int32_t stored) -> std::uint64_t {
+        return bytes > 16 && stored > 0 ? static_cast<std::uint64_t>(stored) :
+               (std::uint64_t(bytes) + 15) & ~std::uint64_t(15);
+    };
+    const auto end = entry.offset + entry.length;
+    auto at = entry.offset + header.size() + std::uint64_t(count) * 48 + padded_size(size, encoding);
+    std::array<std::uint8_t, 48> record{};
+    for (std::uint32_t i = 0; i < count && at < end; ++i) {
+        read_exact(package, record);
+        const auto length = u32(record.data() + 40);
+        const auto stored = std::bit_cast<std::int32_t>(u32(record.data() + 44));
+        const std::string_view label(reinterpret_cast<const char*>(record.data()), 32);
+        if (label.substr(0, label.find('\0')) == name) {
+            const auto identity = source.fingerprint.empty() ? std::string{} :
+                source.fingerprint + "|remastered|" + std::to_string(at) + "|" + std::to_string(length);
+            return read_payload(package, header, at, end, length, stored, identity);
+        }
+        at += padded_size(length, stored);
+    }
+    return {};
+}
+
+Bytes GameData::read_payload(std::ifstream& package, const std::array<std::uint8_t, 16>& header,
+                             std::uint64_t offset, std::uint64_t limit, std::uint32_t unpacked_size,
+                             std::int32_t encoding, const std::string& identity) const {
+    const auto invalid = [] { return std::runtime_error("Invalid KH2 package payload."); };
     const bool compressed = unpacked_size > 16 && encoding > 0;
     const auto stored_size = compressed ? static_cast<std::uint32_t>(encoding) : unpacked_size;
     constexpr std::uint32_t asset_limit = 128 * 1024 * 1024;
-    if ((unpacked_size > 16 && encoding < -2) || header_size > entry.length || stored_size > entry.length - header_size ||
+    if ((unpacked_size > 16 && encoding < -2) || offset > limit || stored_size > limit - offset ||
         stored_size > asset_limit || unpacked_size > asset_limit) throw invalid();
     std::string key;
-    if (!source.fingerprint.empty()) {
-        const auto identity = source.fingerprint + "|" + std::to_string(entry.offset) + "|" + std::to_string(entry.length);
+    if (!identity.empty()) {
         key = cache_key("asset-v2-", {reinterpret_cast<const std::uint8_t*>(identity.data()), identity.size()});
         if (auto cached = cache_.read(key, unpacked_size); !cached.empty()) return cached;
     }
 
-    package.seekg(static_cast<std::streamoff>(entry.offset + header_size));
+    package.seekg(static_cast<std::streamoff>(offset));
     Bytes data(stored_size);
     read_exact(package, data);
     if (unpacked_size > 16 && (compressed || encoding == -1)) decode_prefix(data, header, archive_table_);

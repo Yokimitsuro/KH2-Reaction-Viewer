@@ -40,7 +40,9 @@ struct MotionSkeleton final {
 // The skeleton of an .mdlx's model (BAR entry 0x04, its collision 0x17).
 MotionSkeleton read_motion_skeleton(const std::uint8_t* data, std::size_t size);
 
-// One motion (kn::MotionPrototype0RAW), its bytes kept as the file has them.
+struct MotionAttributes;
+
+// One interpolated or sampled motion, its bytes kept as the file has them.
 class Motion final {
 public:
     // The motion at `at` (after the 0x90 bytes the game keeps for itself). Throws std::runtime_error when its
@@ -76,10 +78,16 @@ public:
     // MotionPrototype0::getPosition: the root motion at `ticks` (0 = the motion's
     // start); identity when the motion has none (PositionInfo not_unit 0).
     Mat4 root_motion(float ticks) const;
+    const MotionAttributes* attributes() const { return attributes_.get(); }
 
 private:
     friend class MotionPlayer;
+    friend class MotionSet;
+    std::shared_ptr<const MotionAttributes> attributes_;
     std::vector<std::uint8_t> bytes_;  // from the header on
+    int raw_frames_ = 0;
+    std::size_t raw_matrices_ = 0, raw_root_ = 0;
+    Mat4 sample_raw(float ticks, std::size_t offset, std::size_t matrices_per_frame, std::size_t joint) const;
     int model_num_ = 0;
     int calc_num_ = 0;
     float start_ = 0.0F, end_ = 0.0F, fps_ = 30.0F, ret_ = 0.0F;
@@ -105,8 +113,8 @@ struct MotionAttributes final {
     std::vector<Trigger> triggers;
 };
 
-// An .mset's motions by slot (its BAR entry index). An empty slot (DUMM, a size
-// of 0) or one that is not a MotionPrototype0 has none.
+// An .mset's motions by slot (its BAR entry index). An empty slot (DUMM or a
+// size of 0) or one with an unsupported format has none.
 class MotionSet final {
 public:
     MotionSet(const std::uint8_t* data, std::size_t size);
@@ -114,6 +122,7 @@ public:
         return motions_.size();
     }
     const Motion* motion(std::size_t slot) const;
+    std::shared_ptr<const Motion> share_motion(std::size_t slot) const;
     std::string name(std::size_t slot) const;                    // its BAR entry's (R000, ...)
     const MotionAttributes* attributes(std::size_t slot) const;  // none: null
     // Another set's slots from slot `at` on (at or past this one's last; the slots between empty): one model's

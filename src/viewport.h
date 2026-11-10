@@ -1,6 +1,7 @@
 #pragma once
 
 #include "reader.h"
+#include "pax_preview.h"
 
 namespace rc {
 struct SceneSegment {
@@ -18,6 +19,13 @@ struct SceneSegment {
     float blend_ticks = 0;
     bool blend_target_only = false;
     const kh2::Motion* landing = nullptr;
+    const kh2::Motion* ally_motion = nullptr;
+    bool follow_target_motion = false;
+    const kh2::Motion* ally_weapon_motion = nullptr;
+    const kh2::Motion* target_continuation = nullptr;
+    const kh2::Motion* prop_motion = nullptr;
+    int opening_effect = -1;
+    float target_cut = -1;
     bool operator==(const SceneSegment&) const = default;
 };
 
@@ -37,7 +45,12 @@ public:
     void load(const Object* object);
     void load_sora(const Object* object);
     void load_weapon(const Object* object);
-    void draw(int x, int y, int w, int h, int slot, float tick, const ScenePose* scene);
+    void load_ally(const Object* object);
+    void load_ally_weapon(const Object* object, size_t grip_joint);
+    void load_prop(const Object* object);
+    void load_game(const GameData* game);
+    void draw(int x, int y, int w, int h, int slot, float tick, const ScenePose* scene, bool effects);
+    int visible_effects() const { return pax_.visible(); }
     void rotate(float dx, float dy);
     void zoom(float delta);
     void reset();
@@ -49,7 +62,6 @@ private:
     struct Texture { unsigned id; int width, height; };
     struct ActorPose {
         kh2::Mat4 placement;
-        std::vector<kh2::Mat4> palette;
         std::vector<kh2::Mat4> joints;
     };
     struct Actor {
@@ -59,11 +71,11 @@ private:
         ActorPose pose(const kh2::Motion* motion, float tick, bool root_motion) const;
         void blend(const ActorPose& from, ActorPose& to, float weight) const;
         void bounds(const ActorPose& pose, std::array<float, 3>& low, std::array<float, 3>& high) const;
-        void draw(const ActorPose& pose) const;
+        void draw(const ActorPose& pose, bool translucent) const;
     };
     struct StagePose {
-        ActorPose sora, target, weapon;
-        bool show_target, show_weapon;
+        ActorPose sora, target, weapon, ally, ally_weapon, prop;
+        bool show_target, show_weapon, show_ally, show_ally_weapon, show_prop;
     };
     struct CameraKey {
         float tick;
@@ -77,7 +89,9 @@ private:
     void fit_scene(std::span<const SceneSegment> segments, const ScenePose& scene);
     CameraKey follow_view(float tick) const;
 
-    Actor target_, sora_, weapon_;
+    Actor target_, sora_, weapon_, ally_, ally_weapon_, prop_;
+    PaxPreview pax_;
+    size_t ally_grip_joint_ = 0;
     float center_[3]{0, .8F, 0}, radius_ = 1.5F, distance_ = 4;
     float yaw_ = 145, pitch_ = 9;
     float scene_zoom_ = 1;

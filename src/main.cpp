@@ -47,6 +47,11 @@ std::string actor_title(const std::string& id) {
     return id;
 }
 
+bool cyclone_target(const fs::path& model) {
+    const auto id = model.stem();
+    return id == "M_EX010" || id == "M_EX010_NM" || id == "M_EX010_TR" || id == "M_EX010_WI";
+}
+
 struct Selection {
     fs::path pending;
     std::mutex mutex;
@@ -76,6 +81,10 @@ struct App {
     std::unique_ptr<Object> sora;
     PlayerRig scene_rig = PlayerRig::Sora;
     std::unique_ptr<Object> weapon;
+    std::unique_ptr<Object> ally, ally_weapon;
+    std::unique_ptr<Object> prop;
+    fs::path prop_path;
+    AllyRig scene_ally = AllyRig::None;
     Viewport view;
     Selection choose_game;
     std::string error, message_note;
@@ -84,7 +93,7 @@ struct App {
     int reaction = -1, reaction_target = 0;
     int reaction_pair_slot = -1;
     bool details = false, sora_only = false, reaction_preview = false;
-    int preview_filter = 0;
+    int preview_filter = 2;
     bool context_pose = false;
     float context_tick = 0;
     bool select_reactions_tab = false, select_chains_tab = false;
@@ -97,6 +106,7 @@ struct App {
     float tick = 0, speed = 1;
     bool playing = false, loop = true;
     bool follow_camera = true;
+    bool show_effects = true;
     bool scene_active = false, show_scene_tab = false;
     bool show_bdx_tab = false;
     int scene_clip = -1, scene_target = -1;
@@ -109,14 +119,23 @@ struct App {
         auto entries = read_commands(*selected);
         objects = selected->models();
         game = std::move(selected);
+        view.load_game(game.get());
         commands = std::move(entries);
         load_names();
         current.clear();
         view.load(nullptr);
         view.load_sora(nullptr);
         view.load_weapon(nullptr);
+        view.load_ally(nullptr);
+        view.load_ally_weapon(nullptr, 0);
+        view.load_prop(nullptr);
         sora.reset();
         weapon.reset();
+        ally.reset();
+        ally_weapon.reset();
+        prop.reset();
+        prop_path.clear();
+        scene_ally = AllyRig::None;
         object.reset();
         recent_objects.clear();
         cmd = slot = -1;
@@ -197,6 +216,19 @@ struct App {
         return scene_target >= 0 && object && object->motions ? object->motions->motion(scene_target) : nullptr;
     }
 
+    const kh2::Motion* target_continuation() const {
+        if (!chain.empty()) return nullptr;
+        const auto* pair = scene_pair();
+        if (!pair || pair->target_continuation < 0 || !object->motions) return nullptr;
+        const auto* motion = object->motions->motion(pair->target_continuation);
+        return motion && motion->model_joints() == int(object->model.joints.size()) ? motion : nullptr;
+    }
+
+    float target_ticks(const kh2::Motion* motion, const kh2::Motion* continuation) const {
+        return motion && !context_pose ? motion->length_ticks() + scene_delay +
+                                         (continuation ? continuation->length_ticks() : 0.0F) : 0.0F;
+    }
+
     const kh2::Motion* weapon_motion() const {
         return scene_clip >= 0 && object ? object->reaction_clips[scene_clip].weapon.get() : nullptr;
     }
@@ -228,6 +260,25 @@ struct App {
         if (const auto* link = selected_target(); link && link->model == current) return link->name;
         const auto id = utf8(current.stem());
         return object_name(id) ? object_name(id) : id;
+    }
+
+    std::string scene_cast() const {
+        std::string cast = player_name(scene_rig);
+        if (sora_only) return cast;
+        if (scene_clip >= 0 && ally_motion(object->reaction_clips[scene_clip])) {
+            cast += " + ";
+            cast += ally_name(scene_ally);
+            if (scene_ally == AllyRig::JackSparrow) return cast + " + Barbossa";
+        }
+        return cast + " + " + target_title();
+    }
+
+    const kh2::Motion* ally_motion(const ReactionClip& capture) const {
+        return capture.ally_rig == scene_ally ? capture.ally.get() : nullptr;
+    }
+
+    const kh2::Motion* ally_weapon_motion(const ReactionClip& capture) const {
+        return ally_motion(capture) ? capture.ally_weapon.get() : nullptr;
     }
 
     void select_reaction(int index, int target = 0) {
@@ -271,6 +322,24 @@ struct App {
         }
         if (capture.motion->model_joints() != int(sora->model.joints.size()))
             throw std::runtime_error("The reaction track does not match its player model in this copy of the game.");
+        if (capture.ally && capture.ally_rig != scene_ally && game->exists(ally_model(capture.ally_rig))) {
+            auto model = std::make_unique<Object>(read_object(*game, ally_model(capture.ally_rig), false));
+            if (model->player && capture.ally->model_joints() == int(model->model.joints.size())) {
+                view.load_ally(model.get());
+                ally = std::move(model);
+                scene_ally = capture.ally_rig;
+                view.load_ally_weapon(nullptr, 0);
+                ally_weapon.reset();
+                const auto path = ally_weapon_model(scene_ally);
+                if (game->exists(path)) {
+                    try {
+                        ally_weapon = std::make_unique<Object>(read_object(*game, path, false));
+                        const size_t grip_joint = scene_ally == AllyRig::JackSparrow ? 205 : 163;
+                        view.load_ally_weapon(ally_weapon.get(), grip_joint);
+                    } catch (const std::runtime_error&) { /* The ally track remains available. */ }
+                }
+            }
+        }
         context_pose = false;
         scene_clip = clip;
         scene_target = target;
@@ -295,11 +364,29 @@ struct App {
             if (!target || target->model_joints() != int(object->model.joints.size())) break;
             cmd = pair.command;
             start_scene(static_cast<int>(i), pair.target_slot);
+            load_scene_prop(pair);
             if (pair.command == 444) scene_offset[2] = 4.8F;
             show_scene_tab = true;
             return;
         }
         throw std::runtime_error("This extraction is missing one of the expected tracks.");
+    }
+
+    void load_scene_prop(const ReactionPair& pair) {
+        if (!pair.prop_model || prop_path == pair.prop_model || !game->exists(pair.prop_model)) return;
+        try {
+            auto model = std::make_unique<Object>(read_object(*game, pair.prop_model, false));
+            view.load_prop(model.get());
+            prop = std::move(model);
+            prop_path = pair.prop_model;
+        } catch (const std::runtime_error&) { /* The linked player and target tracks remain available. */ }
+    }
+
+    void set_pair_metadata(SceneSegment& segment, const ReactionPair& pair) const {
+        segment.follow_target_motion = pair.follow_target_motion;
+        segment.opening_effect = pair.opening_effect;
+        if (prop && pair.prop_model && prop_path == pair.prop_model && pair.prop_slot >= 0 && prop->motions)
+            segment.prop_motion = prop->motions->motion(pair.prop_slot);
     }
 
     const ReactionClip* linked_player_clip(const ReactionTarget& link) const {
@@ -315,10 +402,12 @@ struct App {
         return pair_for(link);
     }
 
-    void play_selected_reaction(bool show_context = true) {
+    void play_selected_reaction(bool show_context = false) {
         const auto* link = selected_target();
         if (!link) return;
-        if (const auto* pair = selected_pair(*link)) {
+        if (link->command == 34 && cyclone_target(link->model)) {
+            open_cyclone_chain();
+        } else if (const auto* pair = selected_pair(*link)) {
             play_pair(*pair);
         } else if (const auto* clip = linked_player_clip(*link)) {
             const bool has_target = show_context && object->model_status.empty();
@@ -342,7 +431,11 @@ struct App {
     }
 
     bool includes_target(const ReactionTarget& target) const {
-        if (preview_filter == 2) return pair_for(target) != nullptr;
+        if (preview_filter == 2) {
+            if (target.command == 34 && cyclone_target(target.model)) return true;
+            const auto* pair = pair_for(target);
+            return pair && pair->target_slot != 0;
+        }
         return preview_filter == 0 || has_preview(target);
     }
 
@@ -368,10 +461,20 @@ struct App {
         start_scene(steps.front().clip, steps.front().target);
         chain = std::move(steps);
         chain_camera.clear();
+        const auto pairs = known_pairs(utf8(current.stem()));
         for (const auto& step : chain) {
             const auto& clip = object->reaction_clips[step.clip];
             chain_camera.push_back({clip.motion.get(), step.target < 0 ? nullptr : object->motions->motion(step.target),
                                     clip.weapon.get(), step.duration, step.target >= 0, false});
+            chain_camera.back().ally_motion = ally_motion(clip);
+            chain_camera.back().ally_weapon_motion = ally_weapon_motion(clip);
+            const auto pair = std::find_if(pairs.begin(), pairs.end(), [&](const auto& p) {
+                return p.command == step.command && p.package_slot == clip.package_slot && p.target_slot == step.target;
+            });
+            if (pair != pairs.end()) {
+                load_scene_prop(*pair);
+                set_pair_metadata(chain_camera.back(), *pair);
+            }
         }
         chain_title = title;
         sora_only = chain.front().target < 0;
@@ -413,6 +516,65 @@ struct App {
         chain_camera[1].target_start = chain[0].duration * rate;
     }
 
+    void open_cyclone_chain() {
+        if (!cyclone_target(current)) open_object(fs::path("obj/M_EX010.mdlx"));
+        // Cyclone takes AA00 then AA01. Soldier's callback does not start a paired
+        // clip, so stage its kick (52A) and a representative launch reaction (83A).
+        auto opening = chain_step(34, 252, 203, "Dodge the kick", true);
+        auto dive = chain_step(34, 253, 203, "Dive attack", true);
+        const auto* hit = object->motions->motion(234);
+        if (!hit || hit->model_joints() != int(object->model.joints.size()))
+            throw std::runtime_error("The Soldier hit animation is missing.");
+        start_chain({opening, dive}, "Cyclone");
+        scene_offset[2] = 5.7F;
+        scene_yaw = 180;
+        chain_camera[0].target_start = 28.5F;
+        auto& attack = chain_camera[1];
+        attack.target_start = chain_camera[0].target_start + opening.duration;
+        attack.target_cut = 54;
+        attack.target_continuation = hit;
+        attack.blend_ticks = 3;
+    }
+
+    void open_barbossa_chain() {
+        const auto model = fs::path("obj") / "B_CA010.mdlx";
+        if (current != model) open_object(model);
+        start_chain({chain_step(581, 255, 241, "Twin Counter"),
+                     chain_step(580, 256, 242, "Sonic Dive")},
+                    "Barbossa's counterattack");
+    }
+
+    void open_hydra_chain() {
+        const auto model = fs::path("obj") / "B_HE100.mdlx";
+        if (current != model) open_object(model);
+        start_chain({chain_step(346, 258, 213, "Phil One-Two"),
+                     chain_step(420, 259, 214, "Urninator")},
+                    "Hydra's urn sequence");
+    }
+
+    void open_wild_dance_chain() {
+        const auto normal = fs::path("obj") / "M_EX880_DANCER.mdlx";
+        const auto alternate = fs::path("obj/M_EX880_DANCER_EH.mdlx");
+        const auto model = current.stem() == "M_EX880_DANCER_LV99" || current.stem() == "M_EX880_DANCER_EH"
+            ? current : game->exists(normal) ? normal : game->exists(alternate) ? alternate :
+              fs::path("obj/M_EX880_DANCER_LV99.mdlx");
+        if (current != model) open_object(model);
+        start_chain({chain_step(397, 252, 241, "Wild Dance · Catch"),
+                     chain_step(504, 253, 242, "Wild Dance · Follow-up")},
+                    "Demyx's Wild Dance");
+    }
+
+    void open_laser_chain() {
+        const auto normal = fs::path("obj") / "B_EX170_LAST.mdlx";
+        const auto model = current.stem() == "B_EX170_LAST_LV99" || !game->exists(normal)
+            ? fs::path("obj/B_EX170_LAST_LV99.mdlx") : normal;
+        if (current != model) open_object(model);
+        start_chain({chain_step(650, 263, 227, "Laser barrage · Opening"),
+                     chain_step(650, 273, 228, "Laser barrage · Middle"),
+                     chain_step(650, 274, 229, "Laser barrage · Finish")},
+                    "Xemnas's laser barrage");
+    }
+
     void open_elemental_chain(bool fire) {
         const auto model = fs::path("obj") / (fire ? "B_AL100_1ST.mdlx" : "B_AL100_2ND.mdlx");
         const auto alternate = fs::path("obj") / (fire ? "B_AL100_FIRE.mdlx" : "B_AL100_ICE.mdlx");
@@ -443,17 +605,26 @@ struct App {
     ScenePose preview_pose() const {
         const auto* sora = scene_motion();
         const auto* target = target_motion();
+        const auto* continuation = target_continuation();
         const float duration = std::max({0.0F, sora ? sora->length_ticks() : 0.0F,
-                                        target && !context_pose ? target->length_ticks() + scene_delay : 0.0F});
+                                        target_ticks(target, continuation)});
         const auto segments = chain.empty() ? std::span<const SceneSegment>{} : std::span<const SceneSegment>(chain_camera);
+        const auto* pair = scene_pair();
         SceneSegment segment = chain.empty()
-            ? SceneSegment{sora, target, weapon_motion(), duration, !sora_only, !scene_pair()}
+            ? SceneSegment{sora, target, weapon_motion(), duration, !sora_only, !pair}
             : chain_camera[chain_phase];
+        if (chain.empty() && pair) {
+            segment.ally_motion = ally_motion(object->reaction_clips[scene_clip]);
+            segment.ally_weapon_motion = ally_weapon_motion(object->reaction_clips[scene_clip]);
+            segment.target_continuation = continuation;
+            set_pair_metadata(segment, *pair);
+        }
         if (context_pose) {
             segment.apply_root = false;
             segment.target_start = context_tick;
             segment.target_rate = 0;
         }
+        if (sora_only) segment.apply_root = false;
         if (chain.empty() && cmd == 662 && !segment.apply_root) segment.landing = sora_landing();
         return {segment, scene_tick, scene_delay, scene_offset,
                 scene_yaw, segments, chain_tick, follow_camera, chain_phase > 0 && !chain.empty()
@@ -543,7 +714,22 @@ struct App {
             ImGui::InputTextWithHint("##reactions", "Find a reaction or enemy", filter, sizeof(filter));
             constexpr const char* filters[] = {"All reactions", "Playable only", "Paired only"};
             ImGui::SetNextItemWidth(-1);
-            ImGui::Combo("##preview-filter", &preview_filter, filters, int(std::size(filters)));
+            if (ImGui::Combo("##preview-filter", &preview_filter, filters, int(std::size(filters)))) {
+                if (const auto* selected = selected_target(); selected && !includes_target(*selected)) {
+                    const auto& targets = reactions[reaction].targets;
+                    const auto match = std::find_if(targets.begin(), targets.end(),
+                                                    [&](const auto& target) { return includes_target(target); });
+                    if (match != targets.end()) {
+                        try { select_reaction(reaction, int(match - targets.begin())); }
+                        catch (const std::exception& problem) { error = problem.what(); }
+                    } else {
+                        reaction = -1;
+                        playing = scene_active = reaction_preview = false;
+                    }
+                }
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Paired only shows previews that animate the player and target together.");
             const auto query = lowercase(filter);
             if (ImGui::BeginChild("reaction-list")) {
                 for (size_t i = 0; i < reactions.size(); ++i) {
@@ -568,7 +754,8 @@ struct App {
                     auto subtitle = target.name;
                     const bool more_targets = std::any_of(group.targets.begin(), group.targets.end(),
                                                          [&](const auto& link) { return link.name != target.name; });
-                    if (more_targets) subtitle += "  + other targets";
+                    if (!pair_for(target) && target.package_slot >= 0) subtitle += "  · Player only";
+                    else if (more_targets) subtitle += "  + other targets";
                     draw->AddText({at.x + 7, at.y + 23}, IM_COL32(155, 182, 209, 255), subtitle.c_str());
                     ImGui::PopID();
                 }
@@ -579,6 +766,28 @@ struct App {
         const int chain_flags = select_chains_tab ? ImGuiTabItemFlags_SetSelected : 0;
         select_chains_tab = false;
         if (tab("Chains", Browse::Chains, chain_flags)) {
+            const auto linked = [&](const char* title, const char* description, void (App::*open)()) {
+                if (ImGui::Selectable(title, !chain.empty() && std::string_view(chain_title) == title, 0, {0, 30})) {
+                    try { (this->*open)(); }
+                    catch (const std::exception& problem) { error = problem.what(); }
+                }
+                ImGui::TextDisabled("%s", description);
+            };
+            if (has_model("B_HE100.mdlx"))
+                linked("Hydra's urn sequence", "2 steps · Phil One-Two and Urninator", &App::open_hydra_chain);
+            if (has_model("M_EX880_DANCER.mdlx") || has_model("M_EX880_DANCER_EH.mdlx") || has_model("M_EX880_DANCER_LV99.mdlx"))
+                linked("Demyx's Wild Dance", "2 steps · Catch and follow-up", &App::open_wild_dance_chain);
+            if (has_model("M_EX010.mdlx") || cyclone_target(current))
+                linked("Cyclone", "2 steps · Sora and Soldier", &App::open_cyclone_chain);
+            if (has_model("B_EX170_LAST.mdlx") || has_model("B_EX170_LAST_LV99.mdlx"))
+                linked("Xemnas's laser barrage", "3 steps · Sora, Riku and Xemnas", &App::open_laser_chain);
+            if (has_model("B_CA010.mdlx") && has_model("P_CA000.mdlx")) {
+                if (ImGui::Selectable("Barbossa's counterattack", !chain.empty() && std::string_view(chain_title) == "Barbossa's counterattack", 0, {0, 30})) {
+                    try { open_barbossa_chain(); }
+                    catch (const std::exception& problem) { error = problem.what(); }
+                }
+                ImGui::TextDisabled("2 steps · Sora, Jack Sparrow and Barbossa");
+            }
             if ((has_model("B_EX110_LV99.mdlx") || has_model("B_EX110.mdlx")) &&
                 ImGui::Selectable("Axel's counterattack", !chain.empty() && std::string_view(chain_title) == "Axel's counterattack", 0, {0, 30})) {
                 try { open_axel_chain(); }
@@ -733,6 +942,8 @@ struct App {
             const auto* pair = scene_pair();
             if (pair) ImGui::Text("%s performs %s", player_name(player.rig), pair->name);
             ImGui::Text("%s · %s / %s", player_name(player.rig), player.package.c_str(), player.track.c_str());
+            if (ally_motion(player))
+                ImGui::Text("%s · %s", ally_name(player.ally_rig), player.package.c_str());
             if (pair) ImGui::TextWrapped("%s", pair->target_action);
             ImGui::Text("%s · %s / slot %d", object_name(id) ? object_name(id) : "Target",
                         scene_target < 0 ? "Static pose" : object->motions->name(scene_target).c_str(), scene_target);
@@ -840,23 +1051,29 @@ struct App {
         const bool has_player = player != nullptr;
         const bool has_context = has_player && object->model_status.empty();
         const bool has_offer = offer_motion(*link) != nullptr;
-        const char* action = pair ? "Play reaction with both characters" :
-            has_context ? "Play with target for context" : has_player ? "Play the player reaction" :
+        const bool cyclone = link->command == 34 && cyclone_target(link->model);
+        const char* action = cyclone ? "Play Cyclone" : pair ? "Play linked reaction" : has_player ? "Play player animation" :
             has_offer ? "Play animation that offers the command" : target_clip ? "Play linked target animation" : nullptr;
         if (action) {
             if (ImGui::Button(action, {-1, 34})) {
                 try { play_selected_reaction(); }
                 catch (const std::exception& problem) { error = problem.what(); }
+                if (!chain.empty()) return;
             }
-            if (pair) ImGui::TextWrapped("Both actors use linked game clips. The scene uses preview placement.");
+            if (cyclone)
+                ImGui::TextWrapped("Plays Sora's dodge and dive with the Soldier's kick and hit reaction. The impact is staged for preview.");
+            else if (pair && pair->target_slot != 0)
+                ImGui::TextWrapped("Plays the linked game tracks together in the viewer's scene.");
+            else if (pair)
+                ImGui::TextWrapped("The target plays its idle animation during the player's attack.");
             else if (has_player) {
-                if (has_context) {
-                    ImGui::TextWrapped("%s plays the captured track. The target holds a pose for context.", player_name(player->rig));
-                    if (ImGui::SmallButton("Play player track alone")) {
-                        try { play_selected_reaction(false); }
+                ImGui::TextWrapped("%s has a captured animation. No synchronized target track is linked.", player_name(player->rig));
+                if (has_context && details) {
+                    if (ImGui::SmallButton("Show static target for reference")) {
+                        try { play_selected_reaction(true); }
                         catch (const std::exception& problem) { error = problem.what(); }
                     }
-                } else ImGui::TextWrapped("This preview plays %s's linked game clip.", player_name(player->rig));
+                }
             } else if (has_offer) {
                 ImGui::TextWrapped("This clip shows the target's move that makes the command available.");
             }
@@ -864,6 +1081,24 @@ struct App {
             ImGui::TextWrapped("%s", link->script_reference
                 ? "Script reference only. Open technical details to inspect the command branch."
                 : "Animation reference only. Open technical details to inspect the available tracks.");
+        }
+        if (pair && link->model.stem() == "B_CA010" && (link->command == 581 || link->command == 580) &&
+            ImGui::SmallButton("Play Twin Counter into Sonic Dive")) {
+            try { open_barbossa_chain(); playing = true; }
+            catch (const std::exception& problem) { error = problem.what(); }
+            return;
+        }
+        const auto model_id = utf8(link->model.stem());
+        void (App::*open_linked)() = nullptr;
+        if (model_id == "B_HE100" && (link->command == 346 || link->command == 420)) open_linked = &App::open_hydra_chain;
+        if (model_id.starts_with("M_EX880_DANCER") && (link->command == 397 || link->command == 504))
+            open_linked = &App::open_wild_dance_chain;
+        if (model_id.starts_with("B_EX170_LAST") && (link->command == 650 || link->command == 651))
+            open_linked = &App::open_laser_chain;
+        if (open_linked && ImGui::SmallButton("Play full chain")) {
+            try { (this->*open_linked)(); playing = true; }
+            catch (const std::exception& problem) { error = problem.what(); }
+            return;
         }
         if (pair && utf8(link->model.stem()).starts_with("B_EX110") && ImGui::SmallButton("Play Axel's full chain")) {
             try { open_axel_chain(); playing = true; }
@@ -915,6 +1150,8 @@ struct App {
         ImGui::TextWrapped("The original clips play in order. The timeline marks the start of each step.");
         if (current.stem() == "M_EX660")
             ImGui::TextWrapped("Rapid Thruster uses its idle flight animation. Its position and Sora's approach are approximated for this preview.");
+        if (cyclone_target(current))
+            ImGui::TextWrapped("Sora uses both original Cyclone clips. The viewer stages the Soldier's kick and a hit reaction at the point of contact.");
         if (chain_camera.back().landing)
             ImGui::TextWrapped("Sora blends into his standard landing while Blizzard Lord finishes its reaction.");
         if (ImGui::SmallButton(details ? "Hide technical details" : "Show technical details")) details = !details;
@@ -958,7 +1195,8 @@ struct App {
         const bool in_chain = !chain.empty();
         float& tick = in_chain ? chain_tick : scene_active ? scene_tick : this->tick;
         const auto* other = scene_active ? target_motion() : nullptr;
-        float end = std::max({0.0F, m->length_ticks(), other && !context_pose ? other->length_ticks() + scene_delay : 0.0F});
+        const float target_end = target_ticks(other, scene_active ? target_continuation() : nullptr);
+        float end = std::max(m->length_ticks(), target_end);
         if (in_chain) {
             end = 0;
             for (const auto& step : chain) end += step.duration;
@@ -1010,7 +1248,7 @@ struct App {
                 }
             } else if (scene_active) {
                 lane(0, m->length_ticks(), true);
-                if (other && !context_pose) lane(scene_delay, scene_delay + other->length_ticks(), false);
+                if (other && !context_pose) lane(scene_delay, target_end, false);
             } else {
                 for (const auto& w : object->windows)
                     if (int(w.slot) == slot) lane(w.start, w.end, contains_command(w, cmd));
@@ -1023,7 +1261,7 @@ struct App {
             const auto title = chain[chain_phase].title ? chain[chain_phase].title : label(cmd, commands, names);
             ImGui::TextDisabled("Step %d of %zu · %s · %.2f s", chain_phase + 1, chain.size(), title.c_str(), end / 60);
         } else if (scene_active) {
-            const auto actors = std::string(player_name(scene_rig)) + (sora_only ? "" : " + " + target_title());
+            const auto actors = scene_cast();
             ImGui::TextDisabled("%s · %.0f ticks · %.2f s", actors.c_str(), end, end / 60);
         } else {
             ImGui::TextDisabled("%s · slot %d · %.0f ticks · %.2f s", object->motions->name(slot).c_str(), slot, end, end / 60);
@@ -1066,7 +1304,7 @@ struct App {
               ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
         if (scene_active) {
             if (sora_only) ImGui::Text("%s · Reaction animation", player_name(scene_rig));
-            else ImGui::Text("%s + %s", player_name(scene_rig), target_title().c_str());
+            else ImGui::TextUnformatted(scene_cast().c_str());
             if (context_pose) ImGui::TextDisabled("Target pose for context");
         } else if (object) {
             ImGui::Text("%s", target_title().c_str());
@@ -1076,6 +1314,11 @@ struct App {
         if (scene_active) {
             ImGui::Checkbox("Follow action", &follow_camera);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Track the action with smooth framing. Turn off for a fixed camera.");
+        }
+        if (object) {
+            ImGui::Checkbox("PAX effects", &show_effects);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Play supported effect cues from the selected motion.\n%d effects on this frame.", view.visible_effects());
         }
         auto area = ImGui::GetContentRegionAvail();
         ImGui::InvisibleButton("##orbit", {std::max(1.0F, area.x), std::max(1.0F, area.y)});
@@ -1129,6 +1372,8 @@ int inspect(const fs::path& root, const std::string& name, const fs::path& log, 
 }
 
 int main(int argc, char** argv) {
+    const bool hide_effects = argc > 1 && std::string_view(argv[argc - 1]) == "--no-effects";
+    if (hide_effects) --argc;
     if (argc >= 5 && std::string(argv[1]) == "--inspect") {
         try { return inspect(path_of(argv[2]), argv[3], path_of(argv[4]), argc > 5 ? path_of(argv[5]) : fs::path{}); }
         catch (const std::exception& error) { std::ofstream(path_of(argv[4])) << error.what(); return 1; }
@@ -1188,6 +1433,11 @@ int main(int argc, char** argv) {
                 if (option == "--chain") {
                     const auto model = app.current.stem();
                     if (model == "M_EX660") app.open_thruster_chain();
+                    else if (cyclone_target(app.current)) app.open_cyclone_chain();
+                    else if (model == "B_CA010") app.open_barbossa_chain();
+                    else if (model == "B_HE100") app.open_hydra_chain();
+                    else if (utf8(model).starts_with("M_EX880_DANCER")) app.open_wild_dance_chain();
+                    else if (utf8(model).starts_with("B_EX170_LAST")) app.open_laser_chain();
                     else if (model == "B_AL100_1ST" || model == "B_AL100_FIRE") app.open_elemental_chain(true);
                     else if (model == "B_AL100_2ND" || model == "B_AL100_ICE") app.open_elemental_chain(false);
                     else app.open_axel_chain();
@@ -1214,7 +1464,10 @@ int main(int argc, char** argv) {
                         app.play_selected_reaction();
                         app.playing = false;
                         const float frame = std::max(0.0F, std::stof(argv[6]));
-                        if (app.scene_active) app.scene_tick = frame;
+                        if (!app.chain.empty()) {
+                            app.chain_tick = frame;
+                            app.seek_chain();
+                        } else if (app.scene_active) app.scene_tick = frame;
                         else app.tick = frame;
                     }
                 } else if (option == "--bdx") {
@@ -1279,7 +1532,7 @@ int main(int argc, char** argv) {
         app.view.draw(int(app.view_at.x * scale.x),
                       h - int((app.view_at.y + app.view_size.y) * scale.y),
                       int(app.view_size.x * scale.x), int(app.view_size.y * scale.y), app.slot, app.tick,
-                      app.scene_active ? &scene : nullptr);
+                      app.scene_active ? &scene : nullptr, app.show_effects && !hide_effects);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         if (!capture.empty() && ++frames == 3) {
             auto* surface = SDL_CreateSurface(w, h, SDL_PIXELFORMAT_RGBA32);
@@ -1296,6 +1549,7 @@ int main(int argc, char** argv) {
     app.view.load(nullptr);
     app.view.load_sora(nullptr);
     app.view.load_weapon(nullptr);
+    app.view.load_game(nullptr);
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();

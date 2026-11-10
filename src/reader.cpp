@@ -1,4 +1,5 @@
 #include "reader.h"
+#include "khdays/assets/dds.h"
 #include "game_formats.h"
 #include "khdays/assets/kh2_bar.h"
 
@@ -61,26 +62,28 @@ std::vector<ReactionClip> read_reaction_clips(const Bytes& data) {
     for (size_t i = 0; i < entries.size(); ++i) {
         const auto& pack = entries[i];
         if (pack.type != 20 || !pack.size || !kh2::is_bar(data.data(), data.size(), pack.offset)) continue;
-        const auto tracks = kh2::bar_entries(data.data(), pack.offset + pack.size, pack.offset, true);
-        const auto read_track = [&](const char* tag) -> std::unique_ptr<kh2::Motion> {
+        std::optional<kh2::MotionSet> tracks;
+        try { tracks.emplace(data.data() + pack.offset, pack.size); }
+        catch (const std::runtime_error&) { continue; }
+        const auto read_track = [&](const char* tag) -> std::shared_ptr<const kh2::Motion> {
             if (!tag) return {};
-            for (const auto& track : tracks) {
-                if (track.type != 17 || track.name != tag || !track.size ||
-                    !kh2::is_bar(data.data(), pack.offset + pack.size, track.offset)) continue;
-                for (const auto& part : kh2::bar_entries(data.data(), track.offset + track.size, track.offset, true)) {
-                    if (part.type != 9 || part.size <= 0x90) continue;
-                    try {
-                        return std::make_unique<kh2::Motion>(data.data(), part.offset + part.size, part.offset + 0x90);
-                    } catch (const std::runtime_error&) { /* Skip unsupported motion encodings. */ }
-                }
-            }
+            for (size_t slot = 0; slot < tracks->slots(); ++slot)
+                if (tracks->motion(slot) && tracks->name(slot) == tag) return tracks->share_motion(slot);
             return {};
         };
         for (const auto& variant : variants) {
             auto body = read_track(variant.body);
             if (!body || body->model_joints() != variant.joints) continue;
+            auto ally = read_track("0080");
+            auto ally_rig = AllyRig::JackSparrow;
+            if (!ally) {
+                ally = read_track("0190");
+                ally_rig = ally ? AllyRig::Riku : AllyRig::None;
+            }
+            auto ally_weapon = read_track(ally_rig == AllyRig::JackSparrow ? "0081"
+                                       : ally_rig == AllyRig::Riku ? "0191" : nullptr);
             clips.push_back({static_cast<int>(i), pack.name, variant.body, std::move(body),
-                             read_track(variant.weapon), variant.rig});
+                             read_track(variant.weapon), variant.rig, ally_rig, std::move(ally), std::move(ally_weapon)});
             break;
         }
     }
@@ -134,8 +137,26 @@ Object read_object(const GameData& game, const fs::path& path, bool decode_scrip
     const auto entries = kh2::bar_entries(bytes.data(), bytes.size());
     Object object;
     try {
-        object.model = game.packed() ? kh2::import_mdlx(bytes.data(), bytes.size(), utf8(path.stem()))
-                                     : kh2::import_mdlx(game.folder() / path);
+        kh2::MdlxPicture remastered;
+        fs::path hd_folder;
+        const auto model_name = utf8(path.stem());
+        if (game.packed()) {
+            remastered = [&](int number) -> std::optional<khdays::assets::DecodedTexture> {
+                // Xemnas's PC coat atlas darkens the lower panel in this preview.
+                // Use the embedded coat atlas and keep the other remaster textures.
+                if (number == 1 && model_name.starts_with("B_EX170")) return std::nullopt;
+                const auto name = "-" + std::to_string(number) + ".dds";
+                const auto picture = game.read_remastered(path, name);
+                if (picture.empty()) return std::nullopt;
+                return khdays::assets::decode_dds(picture.data(), picture.size(), name);
+            };
+        } else {
+            hd_folder = game.folder() / path.parent_path() / path.stem();
+            if (!fs::is_directory(hd_folder))
+                hd_folder = game.folder().parent_path() / "remastered" / path;
+        }
+        object.model = kh2::import_mdlx(bytes.data(), bytes.size(), model_name,
+                                       hd_folder, remastered, &object.mesh_info);
         if (object.model.model.meshes.empty()) object.model_status = "This MDLX has no visible mesh.";
     } catch (const std::runtime_error& error) {
         // Some reaction sources are script objects or use map geometry. Their
@@ -247,6 +268,18 @@ const char* player_model(PlayerRig rig) {
     return "P_EX100.mdlx";
 }
 
+const char* ally_name(AllyRig rig) {
+    return rig == AllyRig::JackSparrow ? "Jack Sparrow" : "Riku";
+}
+
+const char* ally_model(AllyRig rig) {
+    return rig == AllyRig::JackSparrow ? "obj/P_CA000.mdlx" : "obj/P_EH000_LAST.mdlx";
+}
+
+const char* ally_weapon_model(AllyRig rig) {
+    return rig == AllyRig::JackSparrow ? "obj/W_CA000.mdlx" : "obj/W_EH000.mdlx";
+}
+
 std::span<const ReactionPair> known_pairs(const std::string& object) {
     // BDX capture indices and the target's action routines in the corresponding Axel MSET.
     static constexpr ReactionPair axel[] = {
@@ -262,6 +295,30 @@ std::span<const ReactionPair> known_pairs(const std::string& object) {
         {41, 255, 225, "Dog Paddle", "Cerberus is stunned by the finisher"},
     };
     if (object == "B_HE020") return cerberus;
+    // Jack's Twin Counter callback plays Barbossa's slot 241 and takes
+    // package 255 from Barbossa's motion set for both Sora and Jack.
+    static constexpr ReactionPair barbossa[] = {
+        {392, 252, 193, "Land", "Barbossa strikes while Sora lands"},
+        {393, 254, 194, "Reverse Blade", "Sora counters Barbossa's blade"},
+        {580, 256, 242, "Sonic Dive", "Sora and Jack dive past Barbossa"},
+        {581, 255, 241, "Twin Counter", "Sora and Jack counter Barbossa together"},
+    };
+    if (object == "B_CA010") return barbossa;
+    // The detached head's guillotine_effect state starts PAX 18 and motion 193.
+    static constexpr ReactionPair hydra_head[] = {
+        {238, 253, 193, "Vanquish", "Sora severs the Hydra head", false, -1, nullptr, -1, 18},
+    };
+    if (object == "B_HE110") return hydra_head;
+    static constexpr ReactionPair pumpkin[] = {
+        {314, 252, 241, "Root Ravager", "The pumpkin reels and follows through", false, 242},
+    };
+    if (object == "M_EX750" || object == "M_EX750_NM") return pumpkin;
+    static constexpr ReactionPair water_clone[] = {
+        {397, 252, 241, "Wild Dance", "Demyx's clone is caught by Wild Dance"},
+        {504, 253, 242, "Wild Dance", "Demyx's clone reacts to the follow-up"},
+    };
+    if (object == "M_EX880_DANCER" || object == "M_EX880_DANCER_EH" || object == "M_EX880_DANCER_LV99")
+        return water_clone;
     static constexpr ReactionPair fire[] = {
         {505, 252, 241, "Firagun", "Volcanic Lord plays its swing animation"},
         {661, 253, 242, "Firagun", "Volcanic Lord plays its swing-end animation"},

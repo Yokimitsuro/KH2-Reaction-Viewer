@@ -15,19 +15,19 @@ constexpr kh2::Mat4 identity{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
 constexpr size_t sora_weapon_joint = 178;
 using Vec = std::array<float, 3>;
 
-Vec skin(const khdays::assets::NeutralVertex& v, const std::vector<kh2::Mat4>& palette) {
-    if (palette.empty()) return v.position;
+Vec skin(const khdays::assets::NeutralMesh& mesh, const kh2::MdlxMeshInfo& info, size_t vertex,
+         const std::vector<kh2::Mat4>& joints) {
+    if (joints.empty()) return mesh.vertices[vertex].position;
     Vec point{};
-    float total = 0;
-    for (size_t j = 0; j < 4; ++j) {
-        if (v.weights[j] <= 0 || v.joints[j] >= palette.size()) continue;
-        total += v.weights[j];
-        const auto& m = palette[v.joints[j]];
+    const size_t start = vertex == 0 ? 0 : info.weight_ends[vertex - 1];
+    for (size_t j = start; j < info.weight_ends[vertex]; ++j) {
+        const auto& weight = info.weights[j];
+        const auto& p = weight.position;
+        const auto& m = joints[weight.joint];
         for (size_t k = 0; k < 3; ++k)
-            point[k] += v.weights[j] * (m[k] * v.position[0] + m[k + 4] * v.position[1] +
-                                       m[k + 8] * v.position[2] + m[k + 12]);
+            point[k] += m[k] * p[0] + m[k + 4] * p[1] + m[k + 8] * p[2] + m[k + 12] * p[3];
     }
-    return total > 0 ? point : v.position;
+    return point;
 }
 
 kh2::Mat4 multiply(const kh2::Mat4& a, const kh2::Mat4& b) {
@@ -72,9 +72,18 @@ void Viewport::Actor::load(const Object* next) {
 
 void Viewport::load_sora(const Object* object) { sora_.load(object); fitted_segments_.clear(); }
 void Viewport::load_weapon(const Object* object) { weapon_.load(object); fitted_segments_.clear(); }
+void Viewport::load_ally(const Object* object) { ally_.load(object); fitted_segments_.clear(); }
+void Viewport::load_prop(const Object* object) { prop_.load(object); fitted_segments_.clear(); }
+void Viewport::load_game(const GameData* game) { pax_.load_game(game); }
+void Viewport::load_ally_weapon(const Object* object, size_t grip_joint) {
+    ally_weapon_.load(object);
+    ally_grip_joint_ = grip_joint;
+    fitted_segments_.clear();
+}
 
 void Viewport::load(const Object* object) {
     fitted_segments_.clear();
+    pax_.restart();
     if (target_.object != object) target_.load(object);
     if (!object) return;
     if (object->model.model.meshes.empty()) {
@@ -90,7 +99,7 @@ void Viewport::load(const Object* object) {
     high.fill(-low[0]);
     for (const auto& mesh : model.meshes) {
         for (const auto& vertex : mesh.vertices) {
-            const auto p = skin(vertex, model.palette);
+            const auto& p = vertex.position;
             for (size_t k = 0; k < 3; ++k) {
                 low[k] = std::min(low[k], p[k]);
                 high[k] = std::max(high[k], p[k]);
@@ -122,11 +131,14 @@ void Viewport::frame_scene() {
     yaw_ = 65;
     pitch_ = 13;
     scene_zoom_ = 1;
+    pax_.restart();
 }
 
 Viewport::StagePose Viewport::clip_pose(const SceneSegment& segment, float tick, const ScenePose& scene) const {
     // Scripted pairs already carry their relative movement in the skeletal tracks.
-    StagePose stage{sora_.pose(segment.sora_motion, tick, segment.apply_root), {}, {}, segment.show_target, false};
+    StagePose stage{};
+    stage.sora = sora_.pose(segment.sora_motion, tick, segment.apply_root);
+    stage.show_target = segment.show_target;
     const float landing_tick = segment.landing ? tick - segment.sora_motion->length_ticks() : 0;
     if (landing_tick > 0 && !stage.sora.joints.empty()) {
         constexpr float descent_ticks = 12;
@@ -141,11 +153,38 @@ Viewport::StagePose Viewport::clip_pose(const SceneSegment& segment, float tick,
         stage.sora = std::move(landing);
     }
     if (stage.show_target) {
-        const float target_tick = segment.target_start + tick * segment.target_rate - scene.target_delay;
-        stage.target = target_.pose(segment.target_motion, target_tick, segment.apply_root);
+        float target_tick = segment.target_start + tick * segment.target_rate - scene.target_delay;
+        const auto* target_motion = segment.target_motion;
+        const float cut = segment.target_cut >= 0 ? segment.target_cut :
+            target_motion ? target_motion->length_ticks() : 0;
+        if (segment.target_continuation && target_tick >= cut) {
+            const float next_tick = target_tick - cut;
+            stage.target = target_.pose(segment.target_continuation, next_tick, segment.apply_root);
+            if (segment.target_cut >= 0) {
+                // Keep the hit reaction where the preceding attack was interrupted.
+                const auto root = target_motion->root_motion(cut);
+                for (const size_t axis : {12, 14}) stage.target.placement[axis] += root[axis] * .01F;
+                constexpr float blend_ticks = 5;
+                if (next_tick < blend_ticks) {
+                    const auto from = target_.pose(target_motion, cut, segment.apply_root);
+                    target_.blend(from, stage.target, next_tick / blend_ticks);
+                }
+            }
+        } else {
+            stage.target = target_.pose(target_motion, target_tick, segment.apply_root);
+        }
         auto target_offset = scene.target_offset;
         target_offset[2] += segment.target_depth;
         stage.target.placement = multiply(placement(target_offset, scene.target_yaw), stage.target.placement);
+        if (segment.follow_target_motion && segment.target_motion) {
+            // The mounted player track is local to Living Bone while it runs.
+            // Its skeletal pose already contains the height of the saddle.
+            const float end = segment.target_motion->length_ticks();
+            const auto root = segment.target_motion->root_motion(std::clamp(target_tick, 0.0F, end));
+            const auto start = segment.target_motion->root_motion(0);
+            for (size_t axis = 12; axis < 15; ++axis)
+                stage.sora.placement[axis] += (root[axis] - start[axis]) * .01F;
+        }
     }
     auto offset = segment.offset;
     const float settle = std::clamp(tick / 48, 0.0F, 1.0F);
@@ -153,6 +192,22 @@ Viewport::StagePose Viewport::clip_pose(const SceneSegment& segment, float tick,
     const auto stage_origin = placement(offset, segment.yaw);
     stage.sora.placement = multiply(stage_origin, stage.sora.placement);
     stage.target.placement = multiply(stage_origin, stage.target.placement);
+    if (prop_.object && segment.prop_motion && tick <= segment.prop_motion->length_ticks()) {
+        stage.prop = prop_.pose(segment.prop_motion, tick, false);
+        stage.prop.placement = stage.target.placement;
+        stage.show_prop = true;
+    }
+    if (ally_.object && segment.ally_motion) {
+        stage.ally = ally_.pose(segment.ally_motion, tick, false);
+        stage.ally.placement = stage_origin;
+        stage.show_ally = true;
+        if (ally_weapon_.object && segment.ally_weapon_motion &&
+            segment.ally_weapon_motion->model_joints() == int(ally_weapon_.object->model.joints.size()) &&
+            ally_grip_joint_ < stage.ally.joints.size()) {
+            stage.ally_weapon = ally_weapon_.pose(segment.ally_weapon_motion, tick, false);
+            stage.show_ally_weapon = true;
+        }
+    }
     if (weapon_.object && weapon_.object->player && segment.weapon_motion &&
         segment.weapon_motion->model_joints() == int(weapon_.object->model.joints.size())) {
         const auto& joints = stage.sora.joints;
@@ -174,6 +229,7 @@ Viewport::StagePose Viewport::stage_pose(const SceneSegment& segment, float tick
         if (!segment.blend_target_only) {
             sora_.blend(from.sora, stage.sora, weight);
             if (stage.show_weapon && from.show_weapon) weapon_.blend(from.weapon, stage.weapon, weight);
+            if (stage.show_ally && from.show_ally) ally_.blend(from.ally, stage.ally, weight);
         }
         if (stage.show_target && from.show_target) {
             // Let the incoming clip move the boss even while its pose blends across the cut.
@@ -189,6 +245,8 @@ Viewport::StagePose Viewport::stage_pose(const SceneSegment& segment, float tick
     }
     if (stage.show_weapon)
         stage.weapon.placement = multiply(stage.sora.placement, stage.sora.joints[sora_weapon_joint]);
+    if (stage.show_ally_weapon)
+        stage.ally_weapon.placement = multiply(stage.ally.placement, stage.ally.joints[ally_grip_joint_]);
     return stage;
 }
 
@@ -252,6 +310,9 @@ void Viewport::fit_scene(std::span<const SceneSegment> segments, const ScenePose
             sora_.bounds(stage.sora, sample.low, sample.high);
             if (stage.show_target) target_.bounds(stage.target, sample.low, sample.high);
             if (stage.show_weapon) weapon_.bounds(stage.weapon, sample.low, sample.high);
+            if (stage.show_ally) ally_.bounds(stage.ally, sample.low, sample.high);
+            if (stage.show_ally_weapon) ally_weapon_.bounds(stage.ally_weapon, sample.low, sample.high);
+            if (stage.show_prop) prop_.bounds(stage.prop, sample.low, sample.high);
             if (sample.low[0] > sample.high[0] || sample.low[1] > sample.high[1] || sample.low[2] > sample.high[2]) continue;
             for (size_t axis = 0; axis < 3; ++axis) {
                 sample.center[axis] = (sample.low[axis] + sample.high[axis]) * .5F;
@@ -322,7 +383,7 @@ Viewport::CameraKey Viewport::follow_view(float tick) const {
     return {tick, center, std::lerp(previous.log_radius, next->log_radius, blend)};
 }
 
-void Viewport::draw(int x, int y, int w, int h, int slot, float tick, const ScenePose* scene) {
+void Viewport::draw(int x, int y, int w, int h, int slot, float tick, const ScenePose* scene, bool effects) {
     if (w <= 0 || h <= 0) return;
     glEnable(GL_SCISSOR_TEST);
     glViewport(x, y, w, h);
@@ -375,16 +436,68 @@ void Viewport::draw(int x, int y, int w, int h, int slot, float tick, const Scen
     }
     glEnd();
 
-    if (duo) sora_.draw(stage.sora);
-    if (stage.show_weapon) weapon_.draw(stage.weapon);
-    if (stage.show_target) target_.draw(stage.target);
+    for (bool translucent : {false, true}) {
+        glDepthMask(translucent ? GL_FALSE : GL_TRUE);
+        if (translucent) glEnable(GL_BLEND);
+        if (duo) sora_.draw(stage.sora, translucent);
+        if (stage.show_weapon) weapon_.draw(stage.weapon, translucent);
+        if (stage.show_target) target_.draw(stage.target, translucent);
+        if (stage.show_ally) ally_.draw(stage.ally, translucent);
+        if (stage.show_ally_weapon) ally_weapon_.draw(stage.ally_weapon, translucent);
+        if (stage.show_prop) prop_.draw(stage.prop, translucent);
+    }
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+    if (effects) {
+        const auto bone_anchor = [](const ActorPose& pose, int bone) {
+            return bone >= 0 && static_cast<size_t>(bone) < pose.joints.size()
+                ? multiply(pose.placement, pose.joints[bone]) : pose.placement;
+        };
+        pax_.begin(static_cast<float>(near_clip), radius * 40.0F, static_cast<float>(w) / h, .43F);
+        const auto& target_bank = target_.object->model.model.name;
+        if (duo) {
+            const auto& seg = scene->segment;
+            const auto track = [&](const kh2::Motion* motion, const std::string& bank, int lane, float local,
+                                   ActorPose StagePose::* member, float rate = 1.0F, int opening = -1) {
+                pax_.draw(motion, bank, lane, local, [&](int bone, float frame) {
+                    const float at = std::clamp(scene->tick + (frame - local) / rate, 0.0F, seg.duration);
+                    if (std::abs(at - scene->tick) < .01F) return bone_anchor(stage.*member, bone);
+                    return bone_anchor(stage_pose(seg, at, *scene, scene->previous).*member, bone);
+                }, opening);
+            };
+            track(seg.sora_motion, target_bank, 0, scene->tick, &StagePose::sora);
+            if (stage.show_target && seg.target_rate > 0) {
+                float target_tick = seg.target_start + scene->tick * seg.target_rate - scene->target_delay;
+                const float cut = seg.target_cut >= 0 ? seg.target_cut :
+                    seg.target_motion ? seg.target_motion->length_ticks() : 0;
+                if (seg.target_continuation && target_tick >= cut)
+                    track(seg.target_continuation, target_bank, 1, target_tick - cut,
+                          &StagePose::target, seg.target_rate);
+                else
+                    track(seg.target_motion, target_bank, 1, target_tick, &StagePose::target, seg.target_rate, seg.opening_effect);
+            }
+            if (stage.show_weapon)
+                track(seg.weapon_motion, target_bank, 2, scene->tick, &StagePose::weapon);
+            if (stage.show_ally)
+                track(seg.ally_motion, target_bank, 3, scene->tick, &StagePose::ally);
+            if (stage.show_ally_weapon)
+                track(seg.ally_weapon_motion, target_bank, 4, scene->tick, &StagePose::ally_weapon);
+        } else {
+            const auto* motion = target_.object->motions && slot >= 0 ? target_.object->motions->motion(slot) : nullptr;
+            pax_.draw(motion, target_bank, 1, tick, [&](int bone, float at) {
+                if (std::abs(at - tick) < .01F) return bone_anchor(stage.target, bone);
+                return bone_anchor(target_.pose(motion, at, false), bone);
+            });
+        }
+        pax_.end();
+    } else if (pax_.visible()) pax_.restart();
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_SCISSOR_TEST);
 }
 
 Viewport::ActorPose Viewport::Actor::pose(const kh2::Motion* motion, float tick, bool use_root) const {
     const auto& imported = object->model;
-    ActorPose result{identity, imported.model.palette};
+    ActorPose result{identity};
     if (motion && object->player && motion->model_joints() == static_cast<int>(imported.joints.size())) {
         tick = std::clamp(tick, 0.0F, std::max(0.0F, motion->length_ticks()));
         if (use_root) {
@@ -397,9 +510,6 @@ Viewport::ActorPose Viewport::Actor::pose(const kh2::Motion* motion, float tick,
         for (size_t j = 0; j < imported.joints.size() && j < result.joints.size(); ++j) {
             auto& m = result.joints[j];
             for (size_t k = 12; k < 15; ++k) m[k] *= .01F;
-            const auto& joint = imported.joints[j];
-            if (joint.palette_index < result.palette.size())
-                result.palette[joint.palette_index] = multiply(m, joint.inverse_bind);
         }
     }
     return result;
@@ -407,23 +517,21 @@ Viewport::ActorPose Viewport::Actor::pose(const kh2::Motion* motion, float tick,
 
 void Viewport::Actor::blend(const ActorPose& from, ActorPose& to, float weight) const {
     if (from.joints.empty() || from.joints.size() != to.joints.size()) return;
-    const auto& joints = object->model.joints;
     const float weights[] = {1 - weight, weight};
-    for (size_t j = 0; j < joints.size() && j < to.joints.size(); ++j) {
+    for (size_t j = 0; j < to.joints.size(); ++j) {
         const kh2::Mat4 frames[] = {multiply(from.placement, from.joints[j]), multiply(to.placement, to.joints[j])};
         to.joints[j] = weight <= 0 ? frames[0] : khdays::models::blend_frames(frames, weights, 2);
-        const auto& joint = joints[j];
-        if (joint.palette_index < to.palette.size())
-            to.palette[joint.palette_index] = multiply(to.joints[j], joint.inverse_bind);
     }
     to.placement = identity;
 }
 
 void Viewport::Actor::bounds(const ActorPose& pose, Vec& low, Vec& high) const {
     const auto& m = pose.placement;
-    for (const auto& mesh : object->model.model.meshes) {
-        for (const auto& vertex : mesh.vertices) {
-            const auto p = skin(vertex, pose.palette);
+    const auto& meshes = object->model.model.meshes;
+    for (size_t j = 0; j < meshes.size(); ++j) {
+        const auto& mesh = meshes[j];
+        for (size_t i = 0; i < mesh.vertices.size(); ++i) {
+            const auto p = skin(mesh, object->mesh_info[j], i, pose.joints);
             for (size_t i = 0; i < 3; ++i) {
                 const float v = m[i] * p[0] + m[i + 4] * p[1] + m[i + 8] * p[2] + m[i + 12];
                 if (!std::isfinite(v)) continue;
@@ -434,13 +542,24 @@ void Viewport::Actor::bounds(const ActorPose& pose, Vec& low, Vec& high) const {
     }
 }
 
-void Viewport::Actor::draw(const ActorPose& pose) const {
+void Viewport::Actor::draw(const ActorPose& pose, bool translucent) const {
     const auto& imported = object->model;
     glPushMatrix();
     glMultMatrixf(pose.placement.data());
     glEnable(GL_ALPHA_TEST);
-    glAlphaFunc(GL_GREATER, .22F);
-    for (const auto& mesh : imported.model.meshes) {
+    glAlphaFunc(GL_GREATER, translucent ? 0.0F : .22F);
+    for (size_t j = 0; j < imported.model.meshes.size(); ++j) {
+        const auto& mesh = imported.model.meshes[j];
+        const auto& info = object->mesh_info[j];
+        const bool additive = (info.attribute & (1U << 27)) != 0;
+        const bool subtractive = (info.attribute & (1U << 28)) != 0;
+        using AlphaMode = khdays::assets::NeutralMesh::AlphaMode;
+        if ((mesh.alpha_mode == AlphaMode::blend || additive || subtractive) != translucent) continue;
+        if (translucent) {
+            if (additive) glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+            else if (subtractive) glBlendFunc(GL_ZERO, GL_ONE_MINUS_SRC_COLOR);
+            else glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        }
         const auto tex = textures.find(mesh.texture_name);
         if (tex != textures.end()) {
             glEnable(GL_TEXTURE_2D);
@@ -455,7 +574,7 @@ void Viewport::Actor::draw(const ActorPose& pose) const {
             glColor4ubv(v.color.data());
             if (tex != textures.end())
                 glTexCoord2f(v.texcoord[0] / tex->second.width, v.texcoord[1] / tex->second.height);
-            glVertex3fv(skin(v, pose.palette).data());
+            glVertex3fv(skin(mesh, info, i, pose.joints).data());
         }
         glEnd();
     }

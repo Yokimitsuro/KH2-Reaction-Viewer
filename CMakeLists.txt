@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(KH2ReactionViewer VERSION 0.8.0 LANGUAGES C CXX)
+project(KH2ReactionViewer VERSION 0.9.1 LANGUAGES C CXX)
 
 if(NOT WIN32 OR NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
     message(FATAL_ERROR "KH2 Reaction Viewer requires a Windows x64 MSVC toolchain.")
@@ -39,9 +39,9 @@ target_link_libraries(viewer-imgui PUBLIC SDL3::SDL3-static)
 set(days "${CMAKE_CURRENT_SOURCE_DIR}/third_party/khdays-port")
 set(assets "${days}/assets")
 add_executable(kh2-rc-viewer WIN32
-    src/main.cpp src/cache.cpp src/catalog.cpp src/game_data.cpp src/game_formats.cpp src/reader.cpp src/viewport.cpp
+    src/main.cpp src/cache.cpp src/catalog.cpp src/game_data.cpp src/game_formats.cpp src/pax_preview.cpp src/reader.cpp src/viewport.cpp
     "${assets}/src/kh2_bar.cpp" "${assets}/src/kh2_mdlx.cpp" "${assets}/src/kh2_motion.cpp"
-    "${assets}/src/kh2_map.cpp" "${assets}/src/dds.cpp" "${assets}/src/image.cpp")
+    "${assets}/src/kh2_map.cpp" "${assets}/src/kh2_effect.cpp" "${assets}/src/dds.cpp" "${assets}/src/image.cpp")
 target_include_directories(kh2-rc-viewer PRIVATE
     "${assets}/include" "${days}/port/runtime/mods" third_party/stb)
 target_compile_options(kh2-rc-viewer PRIVATE /utf-8 /permissive-)

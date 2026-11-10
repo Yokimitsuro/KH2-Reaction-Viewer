@@ -100,8 +100,11 @@ See Licenses/OPENKH_LICENSE.txt and Licenses/OPENKH_NOTICE.txt.
 
 Source revisions
 
-The vendored khdays-port model and motion readers and pose helpers are an
-unmodified subset of commit e5a8b7394f4e318c8a9ea64339c4a928368d3396.
+The vendored khdays-port model and motion readers and pose helpers are based
+on commit e5a8b7394f4e318c8a9ea64339c4a928368d3396. The viewer extends the
+MDLX reader with package textures and native skin weights, and the motion
+reader with the sampled matrices found in the game's MSET files.
+The PAX effect interpreter is from the same revision.
 https://github.com/Yokimitsuro/khdays-port/tree/e5a8b7394f4e318c8a9ea64339c4a928368d3396
 See third_party/khdays-port/LICENSE.
 

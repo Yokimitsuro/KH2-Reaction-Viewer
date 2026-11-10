@@ -34,21 +34,34 @@ enum class PlayerRig { Sora, Roxas, LionSora };
 const char* player_name(PlayerRig rig);
 const char* player_model(PlayerRig rig);
 
+enum class AllyRig { None, JackSparrow, Riku };
+const char* ally_name(AllyRig rig);
+const char* ally_model(AllyRig rig);
+const char* ally_weapon_model(AllyRig rig);
+
 struct ReactionClip {
     int package_slot;
     std::string package, track;
-    std::unique_ptr<kh2::Motion> motion, weapon;
+    std::shared_ptr<const kh2::Motion> motion, weapon;
     PlayerRig rig = PlayerRig::Sora;
+    AllyRig ally_rig = AllyRig::None;
+    std::shared_ptr<const kh2::Motion> ally, ally_weapon;
 };
 
 struct ReactionPair {
     int command, package_slot, target_slot;
     const char* name;
     const char* target_action;
+    bool follow_target_motion = false;
+    int target_continuation = -1;
+    const char* prop_model = nullptr;
+    int prop_slot = -1;
+    int opening_effect = -1;
 };
 
 struct Object {
     khdays::assets::ImportedModel model;
+    std::vector<kh2::MdlxMeshInfo> mesh_info;
     std::string model_status;
     std::unique_ptr<kh2::MotionSet> motions;
     std::unique_ptr<kh2::MotionPlayer> player;
