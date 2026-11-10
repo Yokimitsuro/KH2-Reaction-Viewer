@@ -6,6 +6,10 @@
 #define STBI_NO_STDIO
 #include "stb_image.h"
 
+#define NOMINMAX
+#include <windows.h>
+#include <bcrypt.h>
+
 #include <algorithm>
 #include <bit>
 #include <fstream>
@@ -47,41 +51,66 @@ std::string entry_name(const std::uint8_t* start, std::string_view extension = {
     return name;
 }
 
-// PC original-asset cipher adapted from OpenKH EgsEncryption (Apache-2.0).
-// Every block uses the XOR of the same 11 round keys.
-void decode_prefix(Bytes& data, const std::array<std::uint8_t, 16>& seed) {
-    constexpr std::array<std::uint8_t, 256> substitution{
-        0x7E,0x88,0x97,0x55,0x0B,0x06,0xF1,0x08,0xEB,0xBB,0x14,0x1C,0xD8,0x7A,0xEC,0x41,
-        0x34,0xB2,0xA3,0x46,0xEF,0x6B,0xFE,0xE1,0xCF,0x53,0xA5,0x05,0x12,0xD2,0x8E,0x52,
-        0x4A,0x80,0xE9,0x81,0xB0,0xF0,0xB4,0x9C,0xFF,0x0F,0x15,0x13,0xDA,0x73,0x4E,0x77,
-        0xBE,0xD7,0x30,0xE5,0xF6,0x5A,0x11,0x37,0x67,0xBC,0x83,0x6F,0x27,0x76,0xD0,0xCD,
-        0x69,0x0D,0x2E,0x51,0x42,0x90,0xB8,0xB6,0x4C,0xAD,0xCE,0x5B,0x1A,0x1F,0xF5,0xAF,
-        0x01,0xF8,0x5E,0x3A,0x6E,0x68,0x8B,0xE8,0x9F,0xC9,0xD9,0x26,0x92,0x29,0xC8,0x33,
-        0x98,0x32,0x54,0xD4,0x44,0x25,0x66,0xAC,0x5F,0x99,0x21,0xE4,0x8F,0x1D,0xC2,0xD5,
-        0xA4,0x62,0xF9,0x02,0x61,0xDE,0x59,0xE7,0x07,0x9A,0xFA,0x2F,0x95,0x3F,0x86,0xD3,
-        0x78,0xA7,0x75,0xED,0xD6,0x2D,0x64,0x87,0xBD,0xC7,0xC1,0xAA,0xF2,0x8C,0x17,0xCB,
-        0x31,0x8A,0xC3,0xCC,0x04,0xEE,0x6A,0xAB,0x5C,0x22,0x70,0xCA,0x9E,0x71,0x6D,0x85,
-        0x45,0x5D,0xB9,0xA9,0xA6,0x10,0x47,0xFB,0x82,0x7D,0x84,0x7B,0xC6,0xE2,0x38,0xFC,
-        0x2B,0x0E,0x20,0x9D,0xC5,0xF3,0x39,0xA8,0xA0,0x65,0x58,0x43,0x7C,0xE3,0x36,0x18,
-        0x72,0x49,0x79,0xAE,0xD1,0x74,0x40,0xC4,0x91,0x4F,0x24,0x63,0xBF,0xBA,0x23,0x96,
-        0x50,0xB3,0x57,0xDF,0x1E,0x03,0x48,0x7F,0x35,0x4D,0x3E,0xE6,0xA1,0xDD,0x09,0x3C,
-        0x3D,0x3B,0x56,0x8D,0x93,0x2A,0x9B,0x4B,0x0C,0x28,0xB1,0xE0,0x60,0x89,0x19,0xDB,
-        0x2C,0xF7,0x6C,0xB5,0x1B,0x94,0xC0,0xDC,0xEA,0xB7,0x0A,0xF4,0x16,0xFD,0xA2,0x00,
-    };
-    constexpr std::array<std::uint8_t, 10> round_codes{1,2,4,8,16,32,64,128,27,54};
-    auto key = seed;
-    for (size_t i = 0; i < key.size(); ++i)
-        if (key[i] == 0) key[i] = static_cast<std::uint8_t>(i);
-    auto mask = key;
-    for (const auto round : round_codes) {
-        key[0] ^= substitution[key[13]] ^ round;
-        key[1] ^= substitution[key[14]];
-        key[2] ^= substitution[key[15]];
-        key[3] ^= substitution[key[12]];
-        for (size_t i = 4; i < key.size(); ++i) key[i] ^= key[i - 4];
-        for (size_t i = 0; i < key.size(); ++i) mask[i] ^= key[i];
+// From the port's installer/collection_archive.py. Read the S-box from the
+// player's executable and check its digest before using it.
+std::array<std::uint8_t, 256> load_archive_table(const fs::path& folder) {
+    fs::path exe;
+    auto ancestor = folder;
+    for (int depth = 0; depth < 4 && exe.empty(); ++depth) {
+        for (const auto* name : {"KINGDOM HEARTS II FINAL MIX.exe", "KH2FM.exe"}) {
+            const auto candidate = ancestor / name;
+            if (fs::is_regular_file(candidate)) { exe = candidate; break; }
+        }
+        ancestor = ancestor.parent_path();
     }
-    for (size_t i = 0; i < std::min<size_t>(256, data.size()); ++i) data[i] ^= mask[i % mask.size()];
+    if (exe.empty())
+        throw std::runtime_error("Select the KH2 installation folder with KINGDOM HEARTS II FINAL MIX.exe and Image/dt.");
+    auto data = read_file(exe);
+    constexpr size_t table_size = 256, known_offset = 0x710940;
+    constexpr std::array<std::uint8_t, 32> expected{
+        0x75,0x9b,0x2f,0x22,0xf7,0xe0,0xbf,0xd2,0x57,0x06,0x3a,0x01,0xf3,0xde,0x0c,0x08,
+        0x35,0x90,0x52,0x17,0xaa,0x92,0x6d,0xf6,0xde,0xf1,0x34,0xa1,0x43,0x13,0x67,0x2d,
+    };
+    const auto matches = [&](size_t offset) {
+        std::array<std::uint8_t, 32> hash{};
+        return BCRYPT_SUCCESS(BCryptHash(BCRYPT_SHA256_ALG_HANDLE, nullptr, 0, data.data() + offset,
+                                        table_size, hash.data(), static_cast<ULONG>(hash.size()))) && hash == expected;
+    };
+    size_t offset = known_offset;
+    if (data.size() < known_offset + table_size || !matches(offset)) {
+        for (offset = 0; offset + table_size <= data.size(); offset += 16)
+            if (matches(offset)) break;
+        if (offset + table_size > data.size())
+            throw std::runtime_error("The installed KH2 executable has no recognized archive table.");
+    }
+    std::array<std::uint8_t, table_size> table{};
+    std::copy_n(data.data() + offset, table.size(), table.begin());
+    return table;
+}
+
+void decode_prefix(Bytes& data, std::array<std::uint8_t, 16> header,
+                   const std::array<std::uint8_t, 256>& table) {
+    constexpr std::array<std::uint32_t, 11> round_codes{0,1,2,4,8,16,32,64,128,27,54};
+    for (size_t i = 0; i < header.size(); ++i)
+        if (!header[i]) header[i] = static_cast<std::uint8_t>(i);
+    std::array<std::uint32_t, 44> words{};
+    for (size_t i = 0; i < 4; ++i) words[i] = u32(header.data() + 4 * i);
+    for (size_t i = 4; i < words.size(); ++i) {
+        auto next = words[i - 1];
+        if (i % 4 == 0) {
+            next = std::rotr(next, 8);
+            std::uint32_t substituted = 0;
+            for (unsigned shift = 0; shift < 32; shift += 8)
+                substituted |= std::uint32_t(table[(next >> shift) & 0xff]) << shift;
+            next = substituted ^ round_codes[i / 4];
+        }
+        words[i] = words[i - 4] ^ next;
+    }
+    std::array<std::uint32_t, 4> mask{};
+    for (size_t i = 0; i < words.size(); ++i) mask[i % 4] ^= words[i];
+    const size_t length = std::min<size_t>(0x100, data.size() - data.size() % 16);
+    for (size_t i = 0; i < length; ++i)
+        data[i] ^= static_cast<std::uint8_t>(mask[(i / 4) % 4] >> ((i % 4) * 8));
 }
 }
 
@@ -97,6 +126,7 @@ GameData::GameData(const fs::path& selected, const fs::path& cache_folder) : cac
     for (const auto& path : {root, root / "dt", root / "Image" / "dt"}) {
         if (!fs::is_regular_file(path / "kh2_first.hed")) continue;
         folder_ = path;
+        archive_table_ = load_archive_table(path);
         for (const auto* part : {"first", "second", "third", "fourth", "fifth", "sixth"}) {
             const auto index = path / (std::string("kh2_") + part + ".hed");
             if (fs::is_regular_file(index)) add_package(index);
@@ -166,31 +196,32 @@ Bytes GameData::read(const fs::path& file) const {
     const std::uint32_t texture_count = u32(header.data() + 4);
     const auto encoding = std::bit_cast<std::int32_t>(u32(header.data() + 8));
     const std::uint64_t header_size = header.size() + std::uint64_t(texture_count) * 48;
-    const auto stored_size = encoding >= 0 ? static_cast<std::uint32_t>(encoding) : unpacked_size;
+    const bool compressed = unpacked_size > 16 && encoding > 0;
+    const auto stored_size = compressed ? static_cast<std::uint32_t>(encoding) : unpacked_size;
     constexpr std::uint32_t asset_limit = 128 * 1024 * 1024;
-    if (encoding < -2 || header_size > entry.length || stored_size > entry.length - header_size ||
+    if ((unpacked_size > 16 && encoding < -2) || header_size > entry.length || stored_size > entry.length - header_size ||
         stored_size > asset_limit || unpacked_size > asset_limit) throw invalid();
     std::string key;
     if (!source.fingerprint.empty()) {
         const auto identity = source.fingerprint + "|" + std::to_string(entry.offset) + "|" + std::to_string(entry.length);
-        key = cache_key("asset-v1-", {reinterpret_cast<const std::uint8_t*>(identity.data()), identity.size()});
+        key = cache_key("asset-v2-", {reinterpret_cast<const std::uint8_t*>(identity.data()), identity.size()});
         if (auto cached = cache_.read(key, unpacked_size); !cached.empty()) return cached;
     }
 
     package.seekg(static_cast<std::streamoff>(entry.offset + header_size));
     Bytes data(stored_size);
     read_exact(package, data);
-    if (encoding >= -1) decode_prefix(data, header);
-    if (encoding < 0) {
+    if (unpacked_size > 16 && (compressed || encoding == -1)) decode_prefix(data, header, archive_table_);
+    if (!compressed) {
         if (!key.empty()) cache_.write(key, data);
         return data;
     }
-    if (data.size() < 2) throw invalid();
-    Bytes output(unpacked_size);
-    const int decoded = stbi_zlib_decode_noheader_buffer(reinterpret_cast<char*>(output.data()),
-        static_cast<int>(output.size()), reinterpret_cast<const char*>(data.data() + 2),
-        static_cast<int>(data.size() - 2));
-    if (decoded != static_cast<int>(unpacked_size)) throw invalid();
+    // The archive stores the byte count without its alignment padding.
+    Bytes output(unpacked_size + 15);
+    const int decoded = stbi_zlib_decode_buffer(reinterpret_cast<char*>(output.data()),
+        static_cast<int>(output.size()), reinterpret_cast<const char*>(data.data()), static_cast<int>(data.size()));
+    if (decoded < static_cast<int>(unpacked_size)) throw invalid();
+    output.resize(unpacked_size);
     if (!key.empty()) cache_.write(key, output);
     return output;
 }

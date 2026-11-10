@@ -42,6 +42,7 @@ public:
     void zoom(float delta);
     void reset();
     void frame_scene();
+    float context_distance() const;
     void align_axel_steps(std::span<SceneSegment> segments, const ScenePose& scene) const;
 
 private:

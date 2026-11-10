@@ -15,7 +15,8 @@ constexpr std::uintmax_t max_entry = 24ULL * 1024 * 1024;
 bool is_cache_file(const fs::path& path) {
     if (path.extension() != ".bin") return false;
     const auto stem = path.stem().wstring();
-    return stem.starts_with(L"asset-v1-") || stem.starts_with(L"bdx-v1-") || stem.starts_with(L"messages-v1-");
+    return stem.starts_with(L"asset-v1-") || stem.starts_with(L"asset-v2-") || stem.starts_with(L"bdx-v1-") ||
+           stem.starts_with(L"bdx-v2-") || stem.starts_with(L"bdx-v3-") || stem.starts_with(L"messages-v1-");
 }
 }
 

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
-project(KH2ReactionViewer VERSION 0.7.0 LANGUAGES C CXX)
+project(KH2ReactionViewer VERSION 0.8.0 LANGUAGES C CXX)
 
 if(NOT WIN32 OR NOT MSVC OR NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
     message(FATAL_ERROR "KH2 Reaction Viewer requires a Windows x64 MSVC toolchain.")
@@ -39,12 +39,13 @@ target_link_libraries(viewer-imgui PUBLIC SDL3::SDL3-static)
 set(days "${CMAKE_CURRENT_SOURCE_DIR}/third_party/khdays-port")
 set(assets "${days}/assets")
 add_executable(kh2-rc-viewer WIN32
-    src/main.cpp src/cache.cpp src/catalog.cpp src/game_data.cpp src/reader.cpp src/viewport.cpp
+    src/main.cpp src/cache.cpp src/catalog.cpp src/game_data.cpp src/game_formats.cpp src/reader.cpp src/viewport.cpp
     "${assets}/src/kh2_bar.cpp" "${assets}/src/kh2_mdlx.cpp" "${assets}/src/kh2_motion.cpp"
     "${assets}/src/kh2_map.cpp" "${assets}/src/dds.cpp" "${assets}/src/image.cpp")
 target_include_directories(kh2-rc-viewer PRIVATE
     "${assets}/include" "${days}/port/runtime/mods" third_party/stb)
 target_compile_options(kh2-rc-viewer PRIVATE /utf-8 /permissive-)
+target_compile_definitions(kh2-rc-viewer PRIVATE KH2RC_VERSION="${PROJECT_VERSION}")
 target_link_libraries(kh2-rc-viewer PRIVATE viewer-imgui opengl32 bcrypt)
 set_target_properties(kh2-rc-viewer PROPERTIES OUTPUT_NAME "KH2 RC Viewer")
 add_custom_command(TARGET kh2-rc-viewer POST_BUILD
@@ -52,15 +53,9 @@ add_custom_command(TARGET kh2-rc-viewer POST_BUILD
         "${CMAKE_CURRENT_SOURCE_DIR}/ReactionCatalog.tsv" "$<TARGET_FILE_DIR:kh2-rc-viewer>"
     VERBATIM)
 
-set(KH2_RC_DECODER_DIR "" CACHE PATH "Optional Decoder directory from the Windows release")
-if(KH2_RC_DECODER_DIR)
-    foreach(file IN ITEMS OpenKh.Command.Bdxio.dll OpenKh.Command.MsgTool.dll runtime/dotnet.exe)
-        if(NOT EXISTS "${KH2_RC_DECODER_DIR}/${file}")
-            message(FATAL_ERROR "The Decoder directory is missing ${file}.")
-        endif()
-    endforeach()
-    install(DIRECTORY "${KH2_RC_DECODER_DIR}/" DESTINATION Decoder)
-endif()
 install(TARGETS kh2-rc-viewer RUNTIME DESTINATION .)
-install(FILES LICENSE THIRD_PARTY_NOTICES.txt OPENKH_LICENSE.txt OPENKH_NOTICE.txt README.md ReactionCatalog.tsv
+install(FILES LICENSE THIRD_PARTY_NOTICES.txt README.md ReactionCatalog.tsv
     DESTINATION .)
+install(FILES Licenses/OPENKH_LICENSE.txt Licenses/OPENKH_NOTICE.txt DESTINATION Licenses)
+install(FILES third_party/khdays-port/LICENSE DESTINATION Licenses RENAME KHDAYS_PORT_LICENSE.txt)
+install(FILES third_party/stb/LICENSE DESTINATION Licenses RENAME STB_LICENSE.txt)

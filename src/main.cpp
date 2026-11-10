@@ -74,6 +74,7 @@ struct App {
     std::shared_ptr<Object> object;
     std::list<std::pair<fs::path, std::shared_ptr<Object>>> recent_objects;
     std::unique_ptr<Object> sora;
+    PlayerRig scene_rig = PlayerRig::Sora;
     std::unique_ptr<Object> weapon;
     Viewport view;
     Selection choose_game;
@@ -81,7 +82,11 @@ struct App {
     char filter[120]{};
     Browse browse = Browse::Reactions;
     int reaction = -1, reaction_target = 0;
+    int reaction_pair_slot = -1;
     bool details = false, sora_only = false, reaction_preview = false;
+    int preview_filter = 0;
+    bool context_pose = false;
+    float context_tick = 0;
     bool select_reactions_tab = false, select_chains_tab = false;
     std::vector<ChainStep> chain;
     std::vector<SceneSegment> chain_camera;
@@ -230,28 +235,43 @@ struct App {
         if (current != link.model) open_object(link.model);
         reaction = index;
         reaction_target = target;
+        reaction_pair_slot = -1;
         reaction_preview = false;
         chain.clear();
         scene_active = playing = false;
         view.load(object.get());
         set_command(link.command);
+        if (offer_motion(link)) set_motion(link.offer_slot, static_cast<float>(link.offer_tick));
+    }
+
+    const kh2::Motion* offer_motion(const ReactionTarget& link) const {
+        if (!object || !object->player || !object->motions || link.offer_slot < 0) return nullptr;
+        const auto* motion = object->motions->motion(link.offer_slot);
+        return motion && motion->model_joints() == int(object->model.joints.size()) ? motion : nullptr;
     }
 
     void start_scene(int clip, int target) {
-        if (!sora) {
-            auto model = std::make_unique<Object>(read_object(*game, fs::path("obj") / "P_EX100.mdlx", false));
+        const auto& capture = object->reaction_clips[clip];
+        if (!sora || scene_rig != capture.rig) {
+            auto model = std::make_unique<Object>(read_object(*game, fs::path("obj") / player_model(capture.rig), false));
+            if (!model->player || capture.motion->model_joints() != int(model->model.joints.size()))
+                throw std::runtime_error("The reaction track does not match its player model in this copy of the game.");
             view.load_sora(model.get());
             sora = std::move(model);
-            const auto path = fs::path("obj") / "W_EX010.mdlx";
-            if (game->exists(path)) {
-                try {
-                    weapon = std::make_unique<Object>(read_object(*game, path, false));
-                    view.load_weapon(weapon.get());
-                } catch (const std::runtime_error&) { /* The body preview remains available. */ }
+            scene_rig = capture.rig;
+            if (!weapon && capture.rig == PlayerRig::Sora) {
+                const auto path = fs::path("obj") / "W_EX010.mdlx";
+                if (game->exists(path)) {
+                    try {
+                        weapon = std::make_unique<Object>(read_object(*game, path, false));
+                        view.load_weapon(weapon.get());
+                    } catch (const std::runtime_error&) { /* The body preview remains available. */ }
+                }
             }
         }
-        if (!sora->player || object->reaction_clips[clip].motion->model_joints() != int(sora->model.joints.size()))
-            throw std::runtime_error("This reaction track does not match the Sora skeleton in this extraction.");
+        if (capture.motion->model_joints() != int(sora->model.joints.size()))
+            throw std::runtime_error("The reaction track does not match its player model in this copy of the game.");
+        context_pose = false;
         scene_clip = clip;
         scene_target = target;
         chain.clear();
@@ -271,7 +291,7 @@ struct App {
     void play_pair(const ReactionPair& pair) {
         for (size_t i = 0; i < object->reaction_clips.size(); ++i) {
             if (object->reaction_clips[i].package_slot != pair.package_slot) continue;
-            const auto* target = object->motions->motion(pair.target_slot);
+            const auto* target = object->motions ? object->motions->motion(pair.target_slot) : nullptr;
             if (!target || target->model_joints() != int(object->model.joints.size())) break;
             cmd = pair.command;
             start_scene(static_cast<int>(i), pair.target_slot);
@@ -282,24 +302,48 @@ struct App {
         throw std::runtime_error("This extraction is missing one of the expected tracks.");
     }
 
-    void play_selected_reaction() {
+    const ReactionClip* linked_player_clip(const ReactionTarget& link) const {
+        if (!object || link.package_slot < 0) return nullptr;
+        const auto clip = std::find_if(object->reaction_clips.begin(), object->reaction_clips.end(),
+                                      [&](const auto& entry) { return entry.package_slot == link.package_slot; });
+        return clip == object->reaction_clips.end() ? nullptr : &*clip;
+    }
+
+    const ReactionPair* selected_pair(const ReactionTarget& link) const {
+        for (const auto& pair : known_pairs(utf8(link.model.stem())))
+            if (pair.command == link.command && pair.package_slot == reaction_pair_slot) return &pair;
+        return pair_for(link);
+    }
+
+    void play_selected_reaction(bool show_context = true) {
         const auto* link = selected_target();
         if (!link) return;
-        if (const auto* pair = pair_for(*link)) {
+        if (const auto* pair = selected_pair(*link)) {
             play_pair(*pair);
-        } else if (link->package_slot >= 0) {
-            const auto clip = std::find_if(object->reaction_clips.begin(), object->reaction_clips.end(),
-                                           [&](const auto& entry) { return entry.package_slot == link->package_slot; });
-            if (clip == object->reaction_clips.end())
-                throw std::runtime_error("The linked Sora track is missing in this copy of the game.");
-            start_scene(static_cast<int>(clip - object->reaction_clips.begin()), -1);
-            sora_only = true;
+        } else if (const auto* clip = linked_player_clip(*link)) {
+            const bool has_target = show_context && object->model_status.empty();
+            const int target = has_target && offer_motion(*link) ? link->offer_slot
+                             : has_target && object->motions && object->motions->motion(0) ? 0 : -1;
+            start_scene(static_cast<int>(clip - object->reaction_clips.data()), target);
+            sora_only = !has_target;
+            context_pose = has_target;
+            if (context_pose) {
+                context_tick = target == link->offer_slot && target >= 0 ? static_cast<float>(link->offer_tick) : 0.0F;
+                scene_offset[2] = view.context_distance();
+            }
+        } else if (offer_motion(*link)) {
+            set_motion(link->offer_slot, 0);
         } else if (!motion() || !std::any_of(object->windows.begin(), object->windows.end(),
                        [&](const auto& w) { return int(w.slot) == slot && contains_command(w, link->command); })) {
             return;
         }
         reaction_preview = true;
         playing = true;
+    }
+
+    bool includes_target(const ReactionTarget& target) const {
+        if (preview_filter == 2) return pair_for(target) != nullptr;
+        return preview_filter == 0 || has_preview(target);
     }
 
     bool has_model(const char* filename) const {
@@ -400,11 +444,16 @@ struct App {
         const auto* sora = scene_motion();
         const auto* target = target_motion();
         const float duration = std::max({0.0F, sora ? sora->length_ticks() : 0.0F,
-                                        target ? target->length_ticks() + scene_delay : 0.0F});
+                                        target && !context_pose ? target->length_ticks() + scene_delay : 0.0F});
         const auto segments = chain.empty() ? std::span<const SceneSegment>{} : std::span<const SceneSegment>(chain_camera);
         SceneSegment segment = chain.empty()
             ? SceneSegment{sora, target, weapon_motion(), duration, !sora_only, !scene_pair()}
             : chain_camera[chain_phase];
+        if (context_pose) {
+            segment.apply_root = false;
+            segment.target_start = context_tick;
+            segment.target_rate = 0;
+        }
         if (chain.empty() && cmd == 662 && !segment.apply_root) segment.landing = sora_landing();
         return {segment, scene_tick, scene_delay, scene_offset,
                 scene_yaw, segments, chain_tick, follow_camera, chain_phase > 0 && !chain.empty()
@@ -437,7 +486,7 @@ struct App {
 
     void top(SDL_Window* window) {
         ImGui::TextColored({.54F,.78F,1,1}, "KH2 Reaction Viewer"); ImGui::SameLine();
-        ImGui::TextDisabled("0.7  /  Kingdom Hearts II Final Mix");
+        ImGui::TextDisabled(KH2RC_VERSION "  /  Kingdom Hearts II Final Mix");
         if (ImGui::Button("Open game data"))
             SDL_ShowOpenFolderDialog(Selection::chosen, &choose_game, window,
                                      game ? utf8(game->folder()).c_str() : nullptr, false);
@@ -492,21 +541,25 @@ struct App {
         if (tab("Reactions", Browse::Reactions, reaction_flags)) {
             ImGui::SetNextItemWidth(-1);
             ImGui::InputTextWithHint("##reactions", "Find a reaction or enemy", filter, sizeof(filter));
+            constexpr const char* filters[] = {"All reactions", "Playable only", "Paired only"};
+            ImGui::SetNextItemWidth(-1);
+            ImGui::Combo("##preview-filter", &preview_filter, filters, int(std::size(filters)));
             const auto query = lowercase(filter);
             if (ImGui::BeginChild("reaction-list")) {
                 for (size_t i = 0; i < reactions.size(); ++i) {
                     const auto& group = reactions[i];
+                    const bool title_matches = lowercase(group.name).find(query) != std::string::npos;
                     const auto match = std::find_if(group.targets.begin(), group.targets.end(), [&](const auto& target) {
-                        return lowercase(target.name).find(query) != std::string::npos ||
+                        if (!includes_target(target)) return false;
+                        return title_matches || lowercase(target.name).find(query) != std::string::npos ||
                                lowercase(utf8(target.model.stem())).find(query) != std::string::npos ||
                                std::to_string(target.command) == query;
                     });
-                    const bool title_matches = lowercase(group.name).find(query) != std::string::npos;
-                    if (!title_matches && match == group.targets.end()) continue;
+                    if (match == group.targets.end()) continue;
                     ImGui::PushID(static_cast<int>(i));
-                    const auto& target = match == group.targets.end() ? group.targets.front() : *match;
+                    const auto& target = *match;
                     if (ImGui::Selectable("##reaction-row", reaction == static_cast<int>(i), 0, {0, 40})) {
-                        try { select_reaction(static_cast<int>(i), title_matches ? 0 : int(match - group.targets.begin())); }
+                        try { select_reaction(static_cast<int>(i), int(match - group.targets.begin())); }
                         catch (const std::exception& problem) { error = problem.what(); }
                     }
                     const auto at = ImGui::GetItemRectMin();
@@ -667,7 +720,8 @@ struct App {
             ImGui::SeparatorText("Reaction pairs traced in BDX");
             for (const auto& pair : pairs) {
                 const auto name = names.empty() ? std::string(pair.name) : label(pair.command, commands, names);
-                if (ImGui::Selectable((name + " · " + std::to_string(pair.command)).c_str(), scene_active && scene_pair() == &pair)) {
+                const auto title = name + " · " + std::to_string(pair.command) + " / " + std::to_string(pair.package_slot);
+                if (ImGui::Selectable(title.c_str(), scene_active && scene_pair() == &pair)) {
                     try { play_pair(pair); }
                     catch (const std::exception& problem) { error = problem.what(); }
                 }
@@ -677,12 +731,13 @@ struct App {
             ImGui::SeparatorText("Scene tracks");
             const auto& player = object->reaction_clips[scene_clip];
             const auto* pair = scene_pair();
-            if (pair) ImGui::Text("Sora performs %s", pair->name);
-            ImGui::Text("Sora · %s / %s", player.package.c_str(), player.track.c_str());
+            if (pair) ImGui::Text("%s performs %s", player_name(player.rig), pair->name);
+            ImGui::Text("%s · %s / %s", player_name(player.rig), player.package.c_str(), player.track.c_str());
             if (pair) ImGui::TextWrapped("%s", pair->target_action);
             ImGui::Text("%s · %s / slot %d", object_name(id) ? object_name(id) : "Target",
                         scene_target < 0 ? "Static pose" : object->motions->name(scene_target).c_str(), scene_target);
             if (pair) ImGui::TextWrapped("Original clips linked through BDX. Preview placement is adjustable.");
+            else if (context_pose) ImGui::TextWrapped("The target holds a pose for context.");
             else ImGui::TextWrapped("Manually paired clips.");
             if (ImGui::Button("Return to single model")) {
                 scene_active = playing = false;
@@ -690,12 +745,11 @@ struct App {
             }
         }
         if (ImGui::CollapsingHeader("Choose clips manually", pairs.empty() ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
-            const auto label = scene_clip < 0 ? "Choose Sora track" : object->reaction_clips[scene_clip].package.c_str();
-            if (ImGui::BeginCombo("Sora", label)) {
+            const auto label = scene_clip < 0 ? "Choose player track" : object->reaction_clips[scene_clip].package.c_str();
+            if (ImGui::BeginCombo("Player", label)) {
                 for (size_t i = 0; i < object->reaction_clips.size(); ++i) {
                     const auto& clip = object->reaction_clips[i];
-                    if (clip.motion->model_joints() != 228) continue;
-                    const auto name = clip.package + " · package " + std::to_string(clip.package_slot);
+                    const auto name = std::string(player_name(clip.rig)) + " · " + clip.package + " · package " + std::to_string(clip.package_slot);
                     if (ImGui::Selectable(name.c_str(), int(i) == scene_clip)) {
                         try { start_scene(int(i), scene_target >= 0 ? scene_target : slot); }
                         catch (const std::exception& problem) { error = problem.what(); }
@@ -704,7 +758,7 @@ struct App {
                 ImGui::EndCombo();
             }
             if (scene_active && ImGui::BeginCombo("Target", scene_target < 0 ? "Static pose" : object->motions->name(scene_target).c_str())) {
-                if (ImGui::Selectable("Static pose", scene_target < 0)) { scene_target = -1; scene_tick = 0; }
+                if (ImGui::Selectable("Static pose", scene_target < 0)) { scene_target = -1; scene_tick = 0; context_pose = false; }
                 for (size_t i = 0; i < object->motions->slots(); ++i) {
                     const auto* motion = object->motions->motion(i);
                     if (!motion || motion->model_joints() != int(object->model.joints.size())) continue;
@@ -712,6 +766,7 @@ struct App {
                     if (ImGui::Selectable(name.c_str(), int(i) == scene_target)) {
                         scene_target = int(i);
                         scene_tick = 0;
+                        context_pose = false;
                     }
                 }
                 ImGui::EndCombo();
@@ -737,6 +792,7 @@ struct App {
             std::map<std::string, int> variants;
             for (size_t i = 0; i < group.targets.size(); ++i) {
                 const auto& target = group.targets[i];
+                if (!includes_target(target) && static_cast<int>(i) != reaction_target) continue;
                 ImGui::PushID(static_cast<int>(i));
                 std::string title = target.name;
                 if (target.command == 505 || target.command == 506) title += " · Swing";
@@ -763,29 +819,51 @@ struct App {
         }
         link = selected_target();
         ImGui::Spacing();
-        const auto* pair = pair_for(*link);
+        const auto* pair = selected_pair(*link);
+        if (pair) {
+            const auto pairs = known_pairs(utf8(link->model.stem()));
+            const auto count = std::count_if(pairs.begin(), pairs.end(),
+                                             [&](const auto& entry) { return entry.command == link->command; });
+            if (count > 1 && ImGui::BeginCombo("Paired track", pair->target_action)) {
+                for (const auto& entry : pairs) {
+                    if (entry.command != link->command) continue;
+                    ImGui::PushID(entry.package_slot);
+                    if (ImGui::Selectable(entry.target_action, &entry == pair)) reaction_pair_slot = entry.package_slot;
+                    ImGui::PopID();
+                }
+                ImGui::EndCombo();
+            }
+        }
         const bool target_clip = object && motion() && std::any_of(object->windows.begin(), object->windows.end(),
              [&](const auto& w) { return int(w.slot) == slot && contains_command(w, link->command); });
+        const auto* player = linked_player_clip(*link);
+        const bool has_player = player != nullptr;
+        const bool has_context = has_player && object->model_status.empty();
+        const bool has_offer = offer_motion(*link) != nullptr;
         const char* action = pair ? "Play reaction with both characters" :
-            link->package_slot >= 0 ? "Play Sora's reaction animation" : target_clip ? "Play linked target animation" : nullptr;
+            has_context ? "Play with target for context" : has_player ? "Play the player reaction" :
+            has_offer ? "Play animation that offers the command" : target_clip ? "Play linked target animation" : nullptr;
         if (action) {
             if (ImGui::Button(action, {-1, 34})) {
                 try { play_selected_reaction(); }
                 catch (const std::exception& problem) { error = problem.what(); }
             }
             if (pair) ImGui::TextWrapped("Both actors use linked game clips. The scene uses preview placement.");
-            else if (link->package_slot >= 0) {
-                ImGui::TextWrapped("Sora's original clip is linked. The target's synchronized animation is unavailable.");
-                if (sora_only && ImGui::SmallButton("Show target model")) {
-                    scene_active = sora_only = playing = false;
-                    reaction_preview = false;
-                    view.load(object.get());
-                }
+            else if (has_player) {
+                if (has_context) {
+                    ImGui::TextWrapped("%s plays the captured track. The target holds a pose for context.", player_name(player->rig));
+                    if (ImGui::SmallButton("Play player track alone")) {
+                        try { play_selected_reaction(false); }
+                        catch (const std::exception& problem) { error = problem.what(); }
+                    }
+                } else ImGui::TextWrapped("This preview plays %s's linked game clip.", player_name(player->rig));
+            } else if (has_offer) {
+                ImGui::TextWrapped("This clip shows the target's move that makes the command available.");
             }
         } else {
             ImGui::TextWrapped("%s", link->script_reference
-                ? "The target's script references this command. A reaction clip has not been matched."
-                : "The animation data references this command. A playable clip has not been matched.");
+                ? "Script reference only. Open technical details to inspect the command branch."
+                : "Animation reference only. Open technical details to inspect the available tracks.");
         }
         if (pair && utf8(link->model.stem()).starts_with("B_EX110") && ImGui::SmallButton("Play Axel's full chain")) {
             try { open_axel_chain(); playing = true; }
@@ -880,7 +958,7 @@ struct App {
         const bool in_chain = !chain.empty();
         float& tick = in_chain ? chain_tick : scene_active ? scene_tick : this->tick;
         const auto* other = scene_active ? target_motion() : nullptr;
-        float end = std::max({0.0F, m->length_ticks(), other ? other->length_ticks() + scene_delay : 0.0F});
+        float end = std::max({0.0F, m->length_ticks(), other && !context_pose ? other->length_ticks() + scene_delay : 0.0F});
         if (in_chain) {
             end = 0;
             for (const auto& step : chain) end += step.duration;
@@ -932,7 +1010,7 @@ struct App {
                 }
             } else if (scene_active) {
                 lane(0, m->length_ticks(), true);
-                if (other) lane(scene_delay, scene_delay + other->length_ticks(), false);
+                if (other && !context_pose) lane(scene_delay, scene_delay + other->length_ticks(), false);
             } else {
                 for (const auto& w : object->windows)
                     if (int(w.slot) == slot) lane(w.start, w.end, contains_command(w, cmd));
@@ -945,7 +1023,7 @@ struct App {
             const auto title = chain[chain_phase].title ? chain[chain_phase].title : label(cmd, commands, names);
             ImGui::TextDisabled("Step %d of %zu · %s · %.2f s", chain_phase + 1, chain.size(), title.c_str(), end / 60);
         } else if (scene_active) {
-            const auto actors = sora_only ? std::string("Sora") : "Sora + " + target_title();
+            const auto actors = std::string(player_name(scene_rig)) + (sora_only ? "" : " + " + target_title());
             ImGui::TextDisabled("%s · %.0f ticks · %.2f s", actors.c_str(), end, end / 60);
         } else {
             ImGui::TextDisabled("%s · slot %d · %.0f ticks · %.2f s", object->motions->name(slot).c_str(), slot, end, end / 60);
@@ -987,10 +1065,13 @@ struct App {
         panel("preview", view_at.x, view_at.y, view_size.x, view_size.y,
               ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
         if (scene_active) {
-            if (sora_only) TextUnformatted("Sora · Reaction animation");
-            else ImGui::Text("Sora + %s", target_title().c_str());
-        } else if (object) ImGui::Text("%s", target_title().c_str());
-        else ImGui::TextUnformatted("3D Preview");
+            if (sora_only) ImGui::Text("%s · Reaction animation", player_name(scene_rig));
+            else ImGui::Text("%s + %s", player_name(scene_rig), target_title().c_str());
+            if (context_pose) ImGui::TextDisabled("Target pose for context");
+        } else if (object) {
+            ImGui::Text("%s", target_title().c_str());
+            if (!object->model_status.empty()) ImGui::TextDisabled("Target mesh unavailable");
+        } else ImGui::TextUnformatted("3D Preview");
         ImGui::TextDisabled("Drag to orbit · scroll to zoom");
         if (scene_active) {
             ImGui::Checkbox("Follow action", &follow_camera);
@@ -1132,7 +1213,9 @@ int main(int argc, char** argv) {
                     if (argc > 6) {
                         app.play_selected_reaction();
                         app.playing = false;
-                        app.scene_tick = std::max(0.0F, std::stof(argv[6]));
+                        const float frame = std::max(0.0F, std::stof(argv[6]));
+                        if (app.scene_active) app.scene_tick = frame;
+                        else app.tick = frame;
                     }
                 } else if (option == "--bdx") {
                     app.show_bdx_tab = true;
@@ -1141,7 +1224,10 @@ int main(int argc, char** argv) {
                 } else if (option == "--pair" && argc > 5) {
                     const int id = std::stoi(argv[5]);
                     const auto pairs = known_pairs(utf8(app.current.stem()));
-                    const auto pair = std::find_if(pairs.begin(), pairs.end(), [id](const auto& p) { return p.command == id; });
+                    const int package = argc > 7 ? std::stoi(argv[7]) : -1;
+                    const auto pair = std::find_if(pairs.begin(), pairs.end(), [&](const auto& p) {
+                        return p.command == id && (package < 0 || p.package_slot == package);
+                    });
                     if (pair == pairs.end()) throw std::runtime_error("No documented pair for this command.");
                     app.play_pair(*pair);
                     if (argc > 6) app.scene_tick = std::clamp(std::stof(argv[6]), 0.0F, app.scene_motion()->length_ticks());

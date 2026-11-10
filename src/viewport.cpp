@@ -77,6 +77,13 @@ void Viewport::load(const Object* object) {
     fitted_segments_.clear();
     if (target_.object != object) target_.load(object);
     if (!object) return;
+    if (object->model.model.meshes.empty()) {
+        center_[0] = center_[2] = 0;
+        center_[1] = .8F;
+        radius_ = 1.5F;
+        reset();
+        return;
+    }
     const auto& model = object->model.model;
     Vec low{}, high{};
     low.fill(std::numeric_limits<float>::max());
@@ -106,6 +113,10 @@ void Viewport::zoom(float delta) {
 }
 
 void Viewport::reset() { yaw_ = 20; pitch_ = 9; distance_ = radius_ * 2.8F; }
+
+float Viewport::context_distance() const {
+    return std::clamp(radius_ * .8F, 1.5F, 6.0F);
+}
 
 void Viewport::frame_scene() {
     yaw_ = 65;

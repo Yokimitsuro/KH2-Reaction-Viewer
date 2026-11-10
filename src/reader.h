@@ -30,10 +30,15 @@ struct Script {
     std::map<int, std::string> dispatch;
 };
 
+enum class PlayerRig { Sora, Roxas, LionSora };
+const char* player_name(PlayerRig rig);
+const char* player_model(PlayerRig rig);
+
 struct ReactionClip {
     int package_slot;
     std::string package, track;
     std::unique_ptr<kh2::Motion> motion, weapon;
+    PlayerRig rig = PlayerRig::Sora;
 };
 
 struct ReactionPair {
@@ -44,6 +49,7 @@ struct ReactionPair {
 
 struct Object {
     khdays::assets::ImportedModel model;
+    std::string model_status;
     std::unique_ptr<kh2::MotionSet> motions;
     std::unique_ptr<kh2::MotionPlayer> player;
     std::vector<Window> windows;

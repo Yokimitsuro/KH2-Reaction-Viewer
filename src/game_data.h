@@ -34,6 +34,7 @@ private:
 
     fs::path folder_;
     std::vector<Package> packages_;
+    std::array<std::uint8_t, 256> archive_table_{};
     std::map<Digest, PackageEntry> entries_;
     std::map<fs::path, fs::path> motion_files_;
     CacheStore cache_;

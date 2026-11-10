@@ -84,20 +84,19 @@ AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
 ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-OpenKH (Apache License 2.0)
-The PC package cipher was adapted from OpenKH's EgsEncryption.cs. The viewer reads original PC assets and uses a reduced XOR key schedule.
-https://github.com/OpenKH/OpenKh/tree/master/OpenKh.Egs
-See OPENKH_LICENSE.txt and OPENKH_NOTICE.txt.
+KH2 format readers
 
-Bundled decoder
-The viewer includes OpenKH Bdxio and MsgTool and their OpenKH library dependencies
-under Apache License 2.0. See OPENKH_LICENSE.txt and OPENKH_NOTICE.txt.
-The private Microsoft .NET 10 runtime includes LICENSE.txt and ThirdPartyNotices.txt
-under Decoder/runtime. The additional managed dependency notices are in
-Decoder/THIRD_PARTY_NOTICES.txt.
+The original-asset archive reader follows khdays-port's
+installer/collection_archive.py. The archive table comes from the player's
+installed game executable. The viewer's BDX reader follows the interpreter
+layout in tools/mods/kh2_bdx.py. Call shapes were extracted from the Steam
+executable with tools/research/kh2_ai.py --exe-calls. The international font
+groups are from port/ui/reaction_command.cpp. These references are from
+khdays-port revision 630768fb9d1fb689474ddb9ee00cb5df7d8a1d91.
 
 Object name references: OpenKH KH2 object dictionary.
 https://openkh.dev/kh2/dictionary/obj.html
+See Licenses/OPENKH_LICENSE.txt and Licenses/OPENKH_NOTICE.txt.
 
 Source revisions
 
@@ -109,7 +108,3 @@ See third_party/khdays-port/LICENSE.
 The vendored stb_image.h is from stb commit 2c980bb59875b0d32144a71867fbdebb2f77cd20.
 https://github.com/nothings/stb/tree/2c980bb59875b0d32144a71867fbdebb2f77cd20
 See third_party/stb/LICENSE.
-
-The Windows release includes OpenKH decoder assemblies from source revision
-7a3b945c538d32c6a285128c98aefba093f52ceb and Microsoft .NET 10.0.9 (Windows x64).
-https://github.com/OpenKH/OpenKh/tree/7a3b945c538d32c6a285128c98aefba093f52ceb
