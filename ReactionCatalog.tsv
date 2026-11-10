@@ -1,0 +1,394 @@
+24	M_EX990	S	-1	Dusk
+27	M_EX770	S	-1	Surveillance Robot
+27	M_EX770_RAW	S	-1	Surveillance Robot (Alternate)
+27	M_EX770_TR	S	-1	Surveillance Robot (Space Paranoids)
+27	M_EX770_TR_RAW	S	-1	M_EX770_TR_RAW
+28	M_EX770	S	-1	Surveillance Robot
+28	M_EX770_RAW	S	-1	Surveillance Robot (Alternate)
+28	M_EX770_TR	S	-1	Surveillance Robot (Space Paranoids)
+28	M_EX770_TR_RAW	S	-1	M_EX770_TR_RAW
+33	F_HB090	S	-1	F_HB090
+33	F_MU070	S	-1	F_MU070
+33	F_MU070_BOSS	S	-1	F_MU070_BOSS
+34	M_EX010	S	-1	Soldier
+34	M_EX010_NM	S	-1	Soldier (Halloween Town)
+34	M_EX010_TR	S	-1	Soldier (Space Paranoids)
+34	M_EX010_WI	S	-1	Soldier (Timeless River)
+35	M_EX050	S	-1	Large Body
+35	M_EX050_WI	S	-1	Large Body (Timeless River)
+36	M_EX050	S	254	Large Body
+36	M_EX050_WI	S	254	Large Body (Timeless River)
+37	M_EX050	S	255	Large Body
+37	M_EX050_WI	S	255	Large Body (Timeless River)
+38	B_HE020	S	-1	Cerberus
+39	B_HE020	S	-1	Cerberus
+41	B_HE020	S	-1	Cerberus
+53	N_BB080_BTL	S	-1	Wardrobe
+67	B_BB100	S	-1	Thresholder
+68	N_BB080_BTL	S	-1	Wardrobe
+69	M_EX990	S	-1	Dusk
+70	M_EX710	S	-1	Morning Star
+71	M_EX710	S	-1	Morning Star
+77	B_MU120	S	252	Storm Rider
+78	B_MU120	S	-1	Storm Rider
+79	B_MU120	S	-1	Storm Rider
+80	B_MU120	S	-1	Storm Rider
+105	M_EX520	S	252	Hook Bat
+105	M_EX520_HB	S	252	Beffudler
+106	M_EX690	S	252	Lance Soldier
+106	M_EX690_HB	S	252	Lance Warrior
+112	M_EX890	S	-1	Dragoon
+113	M_EX890	S	252	Dragoon
+143	N_BB050_BTL	S	-1	Cogsworth
+146	P_BB000_BTL	S	-1	Beast
+147	P_BB000_BTL	S	-1	Beast
+148	B_BB110	S	-1	Dark Thorn
+149	F_BB130	S	-1	F_BB130
+150	F_BB050	S	-1	Shadow Stalker (Chandelier)
+151	F_BB050	S	-1	Shadow Stalker (Chandelier)
+152	M_BB010_SWORD	S	-1	Gargoyle Knight
+173	F_BB050	S	252	Shadow Stalker (Chandelier)
+216	B_MU120	S	-1	Storm Rider
+224	F_HB090	S	253	F_HB090
+224	F_MU070	S	253	F_MU070
+224	F_MU070_BOSS	S	253	F_MU070_BOSS
+233	F_AL030	S	-1	Agrabah object
+236	N_BB050_BTL	S	-1	Cogsworth
+237	F_BB100	S	252	F_BB100
+238	B_HE100	S	252	Hydra
+238	B_HE110	S	252	Hydra Head
+245	P_BB000_BTL	S	-1	Beast
+253	N_DC010_BTL	S	252	Minnie
+268	M_EX890	S	-1	Dragoon
+269	M_EX660	S	252	Rapid Thruster
+269	M_EX660_RAW	S	252	Rapid Thruster (Alternate)
+269	M_EX660_WI	S	252	Rapid Thruster (Timeless River)
+269	M_EX660_WI_RAW	S	-1	M_EX660_WI_RAW
+273	F_CA050	S	-1	F_CA050
+274	F_WI390	S	-1	Steamboat Hook
+274	F_WI390_RTN	S	-1	F_WI390_RTN
+277	F_NM100	S	252	Oogie's Present
+285	M_EX660	S	253	Rapid Thruster
+285	M_EX660_RAW	S	253	Rapid Thruster (Alternate)
+285	M_EX660_WI	S	253	Rapid Thruster (Timeless River)
+285	M_EX660_WI_RAW	S	-1	M_EX660_WI_RAW
+286	M_EX920	S	-1	Sniper
+287	M_EX920	S	-1	Sniper
+297	B_EX100	S	-1	Twilight Thorn
+298	B_EX100	S	-1	Twilight Thorn
+299	B_EX100	S	-1	Twilight Thorn
+300	M_EX760	S	252	Armored Knight
+300	M_EX760_NM	S	252	Armored Knight (Halloween Town)
+300	M_EX760_NM_RAW	S	-1	M_EX760_NM_RAW
+300	M_EX760_RAW	S	252	Armored Knight (Alternate)
+301	M_EX910	S	252	Samurai
+302	M_EX910	S	-1	Samurai
+303	M_EX900	S	254	Assassin
+304	M_EX900	S	-1	Assassin
+305	N_AL090_BTL	S	-1	N_AL090_BTL
+307	N_EX760_BTL	S	252	Pete
+307	N_EX760_BTL_CLSM	S	252	N_EX760_BTL_CLSM
+307	N_EX760_BTL_HERCULES	S	252	N_EX760_BTL_HERCULES
+307	N_EX760_BTL_MEGARA	S	252	N_EX760_BTL_MEGARA
+307	N_EX760_BTL_WILLY	S	-1	N_EX760_BTL_WILLY
+308	M_EX210	S	-1	Air Pirate
+308	M_EX210_HB	S	-1	Aerial Viking
+309	M_EX600	S	252	Magnum Loader
+310	M_EX730	S	252	Tornado Step
+311	M_EX550	S	252	Minute Bomb
+311	M_EX550_WI	S	252	Minute Bomb (Timeless River)
+312	M_EX950	S	252	Gambler
+313	M_EX950	S	253	Gambler
+314	M_EX750	S	252	Creeper Plant
+314	M_EX750_NM	S	252	Creeper Plant (Halloween Town)
+315	N_HE010_BTL	S	252	Hercules
+318	M_EX620	S	252	Fortuneteller
+320	P_EX330	S	-1	P_EX330
+321	M_EX210	S	-1	Air Pirate
+321	M_EX210_HB	S	-1	Aerial Viking
+322	M_EX950	S	253	Gambler
+323	M_EX950	S	252	Gambler
+324	M_EX950	S	-1	Gambler
+325	M_EX950	S	-1	Gambler
+326	F_BB060	S	252	Shadow Stalker (Columns)
+327	F_TT010	S	-1	Skateboard
+327	F_TT010_AL	S	252	F_TT010_AL
+327	F_TT010_CA	S	252	F_TT010_CA
+327	F_TT010_HE	S	252	F_TT010_HE
+327	F_TT010_NM	S	252	Skateboard (Halloween Town)
+327	F_TT010_SORA	S	252	F_TT010_SORA
+327	F_TT010_TR	S	252	Skateboard (Space Paranoids)
+327	F_TT010_WI	S	252	Skateboard (Timeless River)
+328	M_EX110	S	252	Silver Rock
+329	M_EX740	S	-1	Crescendo
+330	F_TT010	S	-1	Skateboard
+330	F_TT010_AL	S	-1	F_TT010_AL
+330	F_TT010_CA	S	-1	F_TT010_CA
+330	F_TT010_HE	S	-1	F_TT010_HE
+330	F_TT010_NM	S	-1	Skateboard (Halloween Town)
+330	F_TT010_SORA	S	-1	F_TT010_SORA
+330	F_TT010_TR	S	-1	Skateboard (Space Paranoids)
+330	F_TT010_WI	S	-1	Skateboard (Timeless River)
+331	M_EX420	S	252	Neoshadow
+331	M_EX420_NM	S	252	Neoshadow (Halloween Town)
+333	F_TR060	S	252	F_TR060
+334	F_TR060	S	-1	F_TR060
+335	B_HE100	S	-1	Hydra
+336	F_WI400	S	252	F_WI400
+336	F_WI410	S	252	F_WI410
+336	F_WI420	S	252	F_WI420
+337	F_WI400	S	253	F_WI400
+337	F_WI410	S	253	F_WI410
+337	F_WI420	S	253	F_WI420
+342	B_HE100	S	-1	Hydra
+343	F_TT060	S	-1	F_TT060
+345	B_EX100	S	-1	Twilight Thorn
+346	B_HE100	S	-1	Hydra
+355	B_CA040	S	252	Undead Pirate C
+355	B_CA040_PUB	S	-1	B_CA040_PUB
+361	B_CA020	S	-1	Undead Pirate A
+362	F_MU000	S	254	F_MU000
+362	F_MU010	S	254	F_MU010
+362	F_MU020	S	254	F_MU020
+363	F_WI060	S	252	Cannon Tower
+364	F_WI360	S	252	F_WI360
+364	F_WI360_PETE	S	252	F_WI360_PETE
+366	B_LK120	S	-1	Groundshaker
+367	M_EX670	S	-1	Living Bone
+367	M_EX720	S	-1	Shaman
+367	M_EX720_HB	S	-1	Necromancer
+368	M_EX670	S	-1	Living Bone
+369	M_EX670	S	-1	Living Bone
+370	M_EX780	S	-1	Aerial Knocker
+370	M_EX780_HB	S	-1	Aerial Champ
+371	F_NM170_CATCH	S	252	F_NM170_CATCH
+372	M_EX780	S	-1	Aerial Knocker
+372	M_EX780_HB	S	-1	Aerial Champ
+374	F_MU000	S	252	F_MU000
+374	F_MU010	S	252	F_MU010
+374	F_MU020	S	252	F_MU020
+380	M_EX800	S	-1	Bolt Tower
+380	M_EX800_DC	S	-1	Bolt Tower (Disney Castle)
+380	M_EX800_MU	S	-1	Bolt Tower (Land of Dragons)
+380	M_EX800_MU_RAW	S	-1	M_EX800_MU_RAW
+380	M_EX800_RAW	S	-1	Bolt Tower (Alternate)
+381	N_DC010_BTL	S	252	Minnie
+382	N_EX500_MONEY_RTN	S	-1	N_EX500_MONEY_RTN
+389	N_AL090_BTL	S	-1	N_AL090_BTL
+390	N_AL090_BTL	S	-1	N_AL090_BTL
+391	N_DC010_BTL	S	253	Minnie
+392	B_CA010	S	252	Barbossa
+393	B_CA010	S	253	Barbossa
+397	M_EX880_DANCER	S	-1	Demyx's Water Clone
+397	M_EX880_DANCER_EH	S	-1	M_EX880_DANCER_EH
+397	M_EX880_DANCER_LV99	S	-1	Demyx's Water Clone (Data)
+398	F_NM070	S	252	F_NM070
+420	B_HE100	S	-1	Hydra
+426	B_EX100	S	-1	Twilight Thorn
+427	M_EX760	S	-1	Armored Knight
+427	M_EX760_NM	S	-1	Armored Knight (Halloween Town)
+427	M_EX760_RAW	S	-1	Armored Knight (Alternate)
+431	F_CA010	S	252	F_CA010
+432	B_EX100	S	-1	Twilight Thorn
+435	N_TR010_BTL	S	252	Sark
+436	N_TR010_BTL	S	253	Sark
+437	F_TT000	S	-1	F_TT000
+438	F_TT000	S	-1	F_TT000
+440	F_TR150	S	-1	F_TR150
+442	F_CA690_BTL	S	252	F_CA690_BTL
+443	B_EX110	S	255	Axel
+443	B_EX110_LV99	S	255	Axel (Data)
+443	B_EX110_SKIRMISH	S	-1	Axel (Skirmish)
+444	B_EX110	S	252	Axel
+444	B_EX110_LV99	S	252	Axel (Data)
+444	B_EX110_SKIRMISH	S	-1	Axel (Skirmish)
+446	B_CA050	S	-1	Grim Reaper
+448	F_TT060	S	-1	F_TT060
+449	F_TT060	S	-1	F_TT060
+458	B_EX150	S	252	Luxord
+458	B_EX150_LV99	S	-1	Luxord (Data)
+459	B_EX150	S	-1	Luxord
+459	B_EX150_LV99	S	-1	Luxord (Data)
+460	B_EX150	S	-1	Luxord
+460	B_EX150_LV99	S	-1	Luxord (Data)
+462	B_CA020	S	-1	Undead Pirate A
+463	N_HE010_BTL	S	-1	Hercules
+464	F_TR150	S	-1	F_TR150
+466	F_TR020	S	252	F_TR020
+466	F_TR020_CORE	S	-1	F_TR020_CORE
+466	F_TR170	S	252	F_TR170
+468	P_EX330	S	-1	P_EX330
+480	M_EX050	S	255	Large Body
+480	M_EX050_WI	S	255	Large Body (Timeless River)
+481	M_EX850	S	252	Berserker's Claymore
+490	B_EX110	S	254	Axel
+490	B_EX110_LV99	S	254	Axel (Data)
+490	B_EX110_SKIRMISH	S	-1	Axel (Skirmish)
+491	B_EX140	S	252	Xigbar
+491	B_EX140_LV99	S	252	Xigbar (Data)
+492	B_EX140	S	-1	Xigbar
+492	B_EX140_LV99	S	-1	Xigbar (Data)
+493	B_EX220	S	252	Saix's Claymore
+493	B_EX220_LV99	S	252	Saix's Claymore (Data)
+494	N_HB500_BTL	S	-1	N_HB500_BTL
+494	N_HB530_BOSS	S	252	Leon
+494	N_HB530_BTL	S	252	Leon
+495	B_LK120	S	-1	Groundshaker
+501	N_WI010_BTL	S	252	Pete
+501	N_WI010_BTL_VS	S	252	N_WI010_BTL_VS
+502	B_EX120	S	-1	Demyx
+502	B_EX120_HB	S	253	Demyx
+502	B_EX120_HB_LV99	S	253	Demyx (Data)
+503	B_LK120	S	-1	Groundshaker
+504	M_EX880_DANCER	S	-1	Demyx's Water Clone
+504	M_EX880_DANCER_EH	S	-1	M_EX880_DANCER_EH
+504	M_EX880_DANCER_LV99	S	-1	Demyx's Water Clone (Data)
+505	B_AL100_1ST	S	252	Volcanic Lord
+505	B_AL100_FIRE	S	252	Volcanic Lord
+506	B_AL100_2ND	S	252	Blizzard Lord
+506	B_AL100_ICE	S	252	Blizzard Lord
+507	F_TT110	S	-1	F_TT110
+508	F_TT110	S	-1	F_TT110
+516	F_TR030	S	252	F_TR030
+517	F_TR160	S	252	F_TR160
+520	B_LK120	S	-1	Groundshaker
+522	B_LK120	S	-1	Groundshaker
+524	B_LK110	S	-1	Scar
+528	M_EX850	S	254	Berserker's Claymore
+533	M_EX060	S	252	Fat Bandit
+535	P_AL010	S	-1	P_AL010
+536	P_AL010	S	-1	P_AL010
+537	P_AL010	S	-1	P_AL010
+538	P_AL010	S	-1	P_AL010
+560	B_NM100	S	252	Prison Keeper
+561	B_EX170	S	252	Xemnas
+561	B_EX170_LV99	S	252	Xemnas (Data)
+562	B_EX170	S	253	Xemnas
+562	B_EX170_LV99	S	253	Xemnas (Data)
+563	B_EX170	S	254	Xemnas
+563	B_EX170_LV99	S	254	Xemnas (Data)
+564	B_EX170	S	255	Xemnas
+564	B_EX170_LV99	S	255	Xemnas (Data)
+575	N_LK020_BTL	S	-1	Pumbaa
+580	B_CA010	S	256	Barbossa
+581	P_CA000	S	-1	Jack Sparrow
+581	P_CA000_HUMAN	S	-1	P_CA000_HUMAN
+581	P_CA000_HUMAN_LOW	S	-1	P_CA000_HUMAN_LOW
+581	P_CA000_LOW	S	-1	P_CA000_LOW
+586	M_EX850	S	254	Berserker's Claymore
+595	B_EX150	S	252	Luxord
+595	B_EX150_LV99	S	252	Luxord (Data)
+597	B_EX140	S	-1	Xigbar
+597	B_EX140_LV99	S	-1	Xigbar (Data)
+598	B_EX140	S	-1	Xigbar
+598	B_EX140_LV99	S	-1	Xigbar (Data)
+601	B_CA050	S	253	Grim Reaper
+603	B_NM110	S	252	The Experiment
+610	P_EH000	S	-1	Riku
+610	P_EH000_LAST	S	-1	P_EH000_LAST
+611	P_EH000	S	-1	Riku
+611	P_EH000_LAST	S	-1	P_EH000_LAST
+612	F_EH080	S	-1	F_EH080
+613	F_TT170	S	-1	F_TT170
+615	B_TR000	S	252	Hostile Program
+617	B_EX270_SIDECAR	S	-1	B_EX270_SIDECAR
+618	B_EX270_SIDECAR	S	-1	B_EX270_SIDECAR
+619	F_EH070	S	-1	F_EH070
+623	F_TT000	S	-1	F_TT000
+624	B_EX210	S	252	Luxord's Card
+625	F_EH050	S	-1	F_EH050
+626	F_EH050	S	-1	F_EH050
+627	F_EH050	S	-1	F_EH050
+629	M_EX590	S	-1	Bulky Vendor
+629	M_EX590_NM	S	-1	Bulky Vendor (Halloween Town)
+630	M_EX590	S	-1	Bulky Vendor
+630	M_EX590_NM	S	-1	Bulky Vendor (Halloween Town)
+631	M_EX590	S	-1	Bulky Vendor
+631	M_EX590_NM	S	-1	Bulky Vendor (Halloween Town)
+632	M_EX590	S	-1	Bulky Vendor
+632	M_EX590_NM	S	-1	Bulky Vendor (Halloween Town)
+634	F_EH050	S	-1	F_EH050
+635	B_EX170_LAST	S	253	Xemnas (Final)
+635	B_EX170_LAST_LV99	S	253	Xemnas (Final) (Data)
+636	B_EX240	S	-1	Xemnas Dragon
+637	B_EX240	S	-1	Xemnas Dragon
+640	B_AL020	S	252	Jafar (Genie)
+641	B_AL020	S	253	Jafar (Genie)
+643	F_EH100	S	-1	F_EH100
+644	B_LK120	S	-1	Groundshaker
+645	F_EH060	S	-1	F_EH060
+646	F_EH060	S	-1	F_EH060
+647	B_EX130	S	252	Xaldin
+647	B_EX130_LV99	S	252	Xaldin (Data)
+648	M_BB010_AX	S	-1	Gargoyle Warrior
+649	B_EX130	S	-1	Xaldin
+649	B_EX130_LV99	S	-1	Xaldin (Data)
+650	B_EX170_LAST	S	-1	Xemnas (Final)
+650	B_EX170_LAST_LV99	S	-1	Xemnas (Final) (Data)
+651	B_EX170_LAST	S	-1	Xemnas (Final)
+651	B_EX170_LAST_LV99	S	-1	Xemnas (Final) (Data)
+652	B_EX170_LAST	S	-1	Xemnas (Final)
+652	B_EX170_LAST_LV99	S	-1	Xemnas (Final) (Data)
+653	B_EX170_LAST	S	-1	Xemnas (Final)
+653	B_EX170_LAST_LV99	S	-1	Xemnas (Final) (Data)
+654	B_EX170_LAST	S	-1	Xemnas (Final)
+654	B_EX170_LAST_LV99	S	-1	Xemnas (Final) (Data)
+655	B_EX270_SIDECAR	S	-1	B_EX270_SIDECAR
+658	B_EX220	S	-1	Saix's Claymore
+658	B_EX220_LV99	S	-1	Saix's Claymore (Data)
+659	B_EX220	S	-1	Saix's Claymore
+659	B_EX220_LV99	S	-1	Saix's Claymore (Data)
+660	B_LK120	S	-1	Groundshaker
+661	B_AL100_1ST	S	253	Volcanic Lord
+661	B_AL100_FIRE	S	253	Volcanic Lord
+662	B_AL100_2ND	S	253	Blizzard Lord
+662	B_AL100_ICE	S	253	Blizzard Lord
+663	M_EX800	S	-1	Bolt Tower
+663	M_EX800_MU	S	-1	Bolt Tower (Land of Dragons)
+663	M_EX800_MU_RAW	S	-1	M_EX800_MU_RAW
+663	M_EX800_RAW	S	-1	Bolt Tower (Alternate)
+664	N_HB630	S	252	Sephiroth
+665	B_EX170_LAST	S	-1	Xemnas (Final)
+665	B_EX170_LAST_LV99	S	-1	Xemnas (Final) (Data)
+666	B_EX100	S	-1	Twilight Thorn
+667	B_EX100	S	-1	Twilight Thorn
+668	M_EX350_01	S	-1	Mushroom XIII No. 1
+668	M_EX350_02	S	-1	Mushroom XIII No. 2
+668	M_EX350_03	S	-1	Mushroom XIII No. 3
+668	M_EX350_04	S	-1	Mushroom XIII No. 4
+668	M_EX350_05	S	-1	Mushroom XIII No. 5
+668	M_EX350_06	S	-1	Mushroom XIII No. 6
+668	M_EX350_06_SU	S	-1	Mushroom XIII No. 6
+668	M_EX350_07	S	-1	Mushroom XIII No. 7
+668	M_EX350_08	S	252	Mushroom XIII No. 8
+668	M_EX350_09	S	-1	Mushroom XIII No. 9
+668	M_EX350_10	S	-1	Mushroom XIII No. 10
+668	M_EX350_11	S	-1	Mushroom XIII No. 11
+668	M_EX350_12	S	-1	Mushroom XIII No. 12
+668	M_EX350_13	S	-1	Mushroom XIII No. 13
+669	N_CM000_BTL	S	-1	Marluxia
+670	N_CM000_BTL	S	253	Marluxia
+671	M_EX350_08	S	252	Mushroom XIII No. 8
+672	B_EX390	S	254	Roxas (Hooded)
+675	B_EX390	S	-1	Roxas (Hooded)
+676	M_EX520	S	252	Hook Bat
+676	M_EX520_HB	S	252	Beffudler
+677	M_EX690	S	252	Lance Soldier
+677	M_EX690_HB	S	252	Lance Warrior
+678	M_EX210	S	-1	Air Pirate
+678	M_EX210_HB	S	-1	Aerial Viking
+679	M_EX720	S	-1	Shaman
+679	M_EX720_HB	S	-1	Necromancer
+680	M_EX350_01	S	-1	Mushroom XIII No. 1
+681	M_EX350_01	S	-1	Mushroom XIII No. 1
+682	B_EX400	S	252	Larxene
+708	N_CM020_BTL	S	252	Lexaeus
+715	B_EX410	S	-1	Sora (Book)
+716	B_EX410	S	252	Sora (Book)
+717	B_EX410	S	253	Sora (Book)
+718	N_CM040_BTL	S	-1	Vexen
+719	N_CM040_BTL	S	253	Vexen
+720	M_EX350_13	S	252	Mushroom XIII No. 13
+721	B_EX370	S	254	Zexion
+722	B_EX420	S	-1	Lingering Will
+723	B_EX420	S	-1	Lingering Will
